@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Musik</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <audio id="audio-player"></audio>
+
+    <div id="header">
+        <div class="header-left">
+            <button class="nav-item active" data-page="home-page">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+                </svg>
+            </button>
+            <button class="nav-item" data-page="search-page">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="11" cy="11" r="7"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+            </button>
+            <button class="nav-item" data-page="playlist-page">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 6h16M4 12h10M4 18h16" stroke-linecap="round"/>
+                    <path d="M20 15v-4l-3 1.5" stroke-linecap="round"/>
+                </svg>
+            </button>
+            <button class="nav-item now-playing-btn" data-page="player-page">
+                <div class="now-playing">
+                    <img id="mini-cover" class="now-playing-cover" src="" alt="">
+                    <div class="now-playing-info">
+                        <span id="mini-title" class="now-playing-title">Nincs lejátszás</span>
+                        <span id="mini-artist" class="now-playing-artist">-</span>
+                    </div>
+                </div>
+            </button>
+        </div>
+
+        <div class="header-right">
+            <button class="nav-item">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                </svg>
+            </button>
+            <button class="nav-item">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <circle cx="12" cy="10" r="3"/>
+                    <path d="M6.168 18.849C7.487 16.52 9.613 15 12 15s4.513 1.52 5.832 3.849"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="main">
+        <div class="side-indicator">
+            <div class="side-indicator-inner"></div>
+        </div>
+
+        <div id="home-page" class="page active">
+            <div class="section">
+                <h2 class="section-title">Recents</h2>
+                <div class="grid-container" id="recents-grid"></div>
+            </div>
+            <div class="section">
+                <h2 class="section-title">Albums for you</h2>
+                <div class="grid-container" id="albums-grid"></div>
+            </div>
+        </div>
+
+        <div id="search-page" class="page">
+            <div class="search-bar">
+                <input type="text" id="search-input" class="search-input" placeholder="Keresés zenék, előadók között...">
+                <svg class="search-bar-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="11" cy="11" r="7"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+            </div>
+            <div class="section">
+                <h2 class="section-title">Recents</h2>
+                <div class="tag-container" id="recent-searches"></div>
+            </div>
+            <div class="section">
+                <h2 class="section-title">Results</h2>
+                <div class="song-list" id="search-results"></div>
+            </div>
+        </div>
+
+        <div id="playlist-page" class="page">
+            <div class="playlist-header">
+                <h2 class="section-title">Playlists</h2>
+                <button class="add-playlist-btn" id="create-playlist-btn">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="playlist-grid" id="playlists-grid"></div>
+        </div>
+
+        <div id="player-page" class="page">
+            <div class="player-container">
+                <div class="player-left">
+                    <img id="player-cover" class="player-main-cover" src="" alt="">
+                    <div class="player-meta">
+                        <div id="player-title" class="title">Song name</div>
+                        <div id="player-artist" class="artist">Artist</div>
+                        <div id="player-album" class="album">Album name</div>
+                    </div>
+                    <div class="player-progress-container">
+                        <input type="range" id="progress-bar" min="0" value="0" step="0.1" class="progress-slider">
+                        <div class="progress-times">
+                            <span id="current-time">00:00</span>
+                            <span id="total-duration">00:00</span>
+                        </div>
+                    </div>
+                    <div class="player-controls">
+                        <button class="control-btn" id="btn-shuffle">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+                        </button>
+                        <button class="control-btn" id="btn-prev">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                        </button>
+                        <button class="control-btn play-main-btn" id="btn-play">
+                            <svg id="play-icon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        </button>
+                        <button class="control-btn" id="btn-next">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                        </button>
+                        <button class="control-btn" id="btn-repeat">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 014-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 01-4 4H3"/></svg>
+                        </button>
+                    </div>
+                    <div class="player-actions">
+                        <button class="control-btn" id="btn-like">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l8.72-8.72 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="player-right">
+                    <div class="queue-header">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+                        </svg>
+                        <span>Song queue</span>
+                    </div>
+                    <div class="queue-list" id="queue-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>

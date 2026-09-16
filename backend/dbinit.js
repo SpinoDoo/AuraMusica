@@ -6,11 +6,12 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     artist TEXT,
-    filename TEXT NOT NULL
+    filename TEXT NOT NULL,
+    cover_path TEXT
   );
 `);
 
-const insert = db.prepare('INSERT INTO songs (title, artist, filename) VALUES (?, ?, ?)');
-insert.run('Stranded', 'Gojira', 'Stranded.mp3');
+// const insert = db.prepare('INSERT INTO songs (title, artist, filename, cover_path) VALUES (?, ?, ?)');
+// insert.run('Stranded', 'Gojira', 'Stranded.mp3');
 
 console.log('DB initialized and seeded.');
