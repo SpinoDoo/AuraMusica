@@ -1,16 +1,16 @@
-const API_BASE_URL = "http://localhost:3000/api";
+const API_BASE_URL = "/api";
 
-document.addEventListener('DOMContentLoaded', () => {
-    const isLoggedIn = localStorage.getItem('isLoggedIn');
+// document.addEventListener('DOMContentLoaded', () => {
+//     const isLoggedIn = localStorage.getItem('isLoggedIn');
 
-    if (!isLoggedIn) {
-        window.location.href = 'auth.html';
-    }
-});
+//     if (!isLoggedIn) {
+//         window.location.href = 'auth.html';
+//     }
+// });
 
 const api = {
     async getRecents() {
-        return this.fetchData("/songs/recents");
+        return this.fetchData("/songs");
     },
     async getAlbums() {
         return this.fetchData("/albums");
@@ -26,9 +26,14 @@ const api = {
     },
     async fetchData(endpoint, method = "GET", body = null) {
         try {
+            const token = localStorage.getItem('token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
             const options = { method, headers: { "Content-Type": "application/json" } };
             if (body) options.body = JSON.stringify(body);
-            const res = await fetch(`${API_BASE_URL}${endpoint}`);
+            
+            const res = await fetch(`${API_BASE_URL}${endpoint}`, options);
             if (!res.ok) throw new Error("API hálózati hiba");
             return await res.json();
         } catch (err) {
@@ -84,7 +89,7 @@ function playTrack(track, queue = []) {
     state.currentTrack = track;
     if (queue.length > 0) state.queue = queue;
 
-    audio.src = track.audioUrl || "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
+    audio.src = track.url || "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
     audio.play();
     state.isPlaying = true;
 
@@ -94,12 +99,12 @@ function playTrack(track, queue = []) {
 function updatePlayerUI(track) {
     document.getElementById("mini-title").innerText = track.title;
     document.getElementById("mini-artist").innerText = track.artist;
-    document.getElementById("mini-cover").src = track.coverUrl || "";
+    document.getElementById("mini-cover").src = track.cover_path || "";
 
     document.getElementById("player-title").innerText = track.title;
     document.getElementById("player-artist").innerText = track.artist;
     document.getElementById("player-album").innerText = track.album || "";
-    document.getElementById("player-cover").src = track.coverUrl || "";
+    document.getElementById("player-cover").src = track.cover_path || "";
 
     playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
 }
@@ -164,7 +169,7 @@ function renderGrid(items, containerId, onClick) {
     const container = document.getElementById(containerId);
     container.innerHTML = items.map((item, index) => `
         <div class="card" data-index="${index}">
-            <img class="card-cover" src="${item.coverUrl || ''}" alt="">
+            <img class="card-cover" src="${item.cover_path || ''}" alt="">
             <div class="card-title">${item.title || item.name}</div>
             <div class="card-subtitle">${item.artist || 'Album'}</div>
         </div>
@@ -184,7 +189,7 @@ function renderSongList(songs, containerId) {
     container.innerHTML = songs.map((song, index) => `
         <div class="song-item" data-index="${index}">
             <div class="song-item-left">
-                <img class="song-cover" src="${song.coverUrl || 'https://picsum.photos/seed/' + (song.id || index) + '/100'}" alt="">
+                <img class="song-cover" src="${song.cover_path || 'https://picsum.photos/seed/' + (song.id || index) + '/100'}" alt="">
                 <div class="song-details">
                     <span class="song-name">${song.title}</span>
                     <span class="song-artist">${song.artist}</span>
@@ -237,8 +242,8 @@ function getMockAlbums() {
    ========================================================================== */
 
 let userPlaylists = JSON.parse(localStorage.getItem("user_playlists")) || [
-    { id: 1, name: "Favorites", coverUrl: "", songCount: 0, songs: [] },
-    { id: 2, name: "Workout", coverUrl: "", songCount: 0, songs: [] }
+    { id: 1, name: "Favorites", cover_path: "", songCount: 0, songs: [] },
+    { id: 2, name: "Workout", cover_path: "", songCount: 0, songs: [] }
 ];
 
 function savePlaylistsToStorage() {
@@ -258,7 +263,7 @@ window.loadPlaylistsData = async function() {
                 </svg>
             </button>
             <div class="playlist-cover-box">
-                ${p.coverUrl ? `<img class="playlist-cover-img" src="${p.coverUrl}" alt="${p.name}">` : ''}
+                ${p.cover_path ? `<img class="playlist-cover-img" src="${p.cover_path}" alt="${p.name}">` : ''}
             </div>
             <div class="playlist-title">${p.name}</div>
             <div class="playlist-count">${p.songs ? p.songs.length : (p.songCount || 0)} song</div>
@@ -288,12 +293,12 @@ window.loadPlaylistsData = async function() {
     });
 };
 
-function createNewPlaylist(name, coverUrl = "") {
+function createNewPlaylist(name, cover_path = "") {
     if (!name || !name.trim()) return;
     const newPlaylist = {
         id: Date.now(),
         name: name.trim(),
-        coverUrl: coverUrl.trim(),
+        cover_path: cover_path.trim(),
         songCount: 0,
         songs: []
     };
@@ -431,7 +436,7 @@ function renderQueue() {
     queueContainer.innerHTML = state.queue.map((song, idx) => `
         <div class="queue-item ${idx === state.currentIndex ? 'active' : ''}" data-index="${idx}">
             <div class="queue-item-left">
-                <img class="queue-cover" src="${song.coverUrl || ''}" alt="">
+                <img class="queue-cover" src="${song.cover_path || ''}" alt="">
                 <div class="song-details">
                     <span class="song-name">${song.title}</span>
                     <span class="song-artist">${song.artist}</span>
@@ -471,7 +476,7 @@ function toggleLikeCurrentTrack() {
 
     let favList = userPlaylists.find(p => p.name === "Favorites");
     if (!favList) {
-        favList = { id: Date.now(), name: "Favorites", coverUrl: "", songCount: 0, songs: [] };
+        favList = { id: Date.now(), name: "Favorites", cover_path: "", songCount: 0, songs: [] };
         userPlaylists.unshift(favList);
     }
     if (!favList.songs) favList.songs = [];
@@ -637,8 +642,8 @@ window.testPlaylist = function(count = 50) {
             artist: `Teszt Előadó ${(i % 5) + 1}`,
             album: `Album ${(i % 3) + 1}`,
             duration: `03:${(10 + (i % 50)).toString().padStart(2, '0')}`,
-            coverUrl: `https://picsum.photos/seed/${i + 100}/200`,
-            audioUrl: `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${songIndex}.mp3`
+            cover_path: `https://picsum.photos/seed/${i + 100}/200`,
+            url: `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${songIndex}.mp3`
         };
     });
 
@@ -647,7 +652,7 @@ window.testPlaylist = function(count = 50) {
         testPlaylist = {
             id: Date.now(),
             name: "Sok Zenés Teszt",
-            coverUrl: "https://picsum.photos/seed/testlist/300",
+            cover_path: "https://picsum.photos/seed/testlist/300",
             songCount: count,
             songs: mockSongs
         };
@@ -685,8 +690,8 @@ function navigateToAuth() {
 }
 
 function handleLogout() {
-    localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('username');
+    localStorage.removeItem('token');
     alert('Sikeresen kijelentkeztél!');
     window.location.reload();
 }

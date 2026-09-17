@@ -6,6 +6,10 @@ const db = new Database('music.db');
 const mm = require('music-metadata');
 const multer = require('multer');
 const fs = require('fs');
+const bcrypt = require('bcrypt');
+require('dotenv').config();
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_KEY;
 
 app.use('/music', express.static(path.join(__dirname, 'music')));
 app.use('/covers', express.static(path.join(__dirname, 'covers')));
@@ -18,6 +22,57 @@ app.use(express.json());
 //   if (!picture) return null;
 //   return picture;
 // }
+
+function requireAuth(req, res, next) {
+    const header = req.headers.authorization;
+    const token = header?.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ error: 'no token provided '});
+    }
+
+    try {
+        req.user = jwt.verify(token, JWT_SECRET);
+        next();
+    } catch {
+        return res.status(403).json({ error: 'invalid or expired token'});
+    }
+}
+
+app.post('/api/register', async (req, res) => {
+    const { username, email, password } = req.body;
+    if (!username || !password || !email) {
+        return res.status(400).json({ error: 'At least one field is empty'});
+    }
+
+    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    if (existing) {
+        return res.status(409).json({ error: 'Username already taken'});
+    }
+
+    const password_hash = await bcrypt.hash(password, 13);
+    const insert = db.prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)');
+    const result = insert.run(username, email, password_hash);
+
+    res.status(201).json({ id: result.lastInsertRowid, username });
+});
+
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+
+    if (!user) {
+        return res.status(401).json({ error: 'Invalid unsername or password'});
+    }
+
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) {
+        return res.status(401).json({ error: 'Invalid unsername or password'});
+    }
+
+    const token = jwt.sign({ id: user.id, username: user.username }, '' + JWT_SECRET, { expiresIn: '14d' });
+    res.json({ token, username: username });
+});
 
 const storage = multer.diskStorage({
     destination: (req, res, cb )=> {
