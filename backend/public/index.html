@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="hu">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -40,25 +40,46 @@
         </div>
 
         <div class="header-right">
-            <button class="nav-item">
+            <!-- <button class="nav-item">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
                 </svg>
-            </button>
-            <button class="nav-item">
+            </button> -->
+            <!-- <button class="nav-item">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/>
                     <circle cx="12" cy="10" r="3"/>
                     <path d="M6.168 18.849C7.487 16.52 9.613 15 12 15s4.513 1.52 5.832 3.849"/>
                 </svg>
+            </button> -->
+                <div class="account-dropdown-container">
+            <button class="nav-item" id="btn-account" onclick="toggleAccountMenu(event)">
+                <!-- A fiók SVG ikonod -->
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
             </button>
+
+            <!-- Lenyíló menü elrendezés -->
+            <div class="account-menu" id="account-menu">
+                <div class="account-menu-header">
+                    <span id="user-display-name">Vendég</span>
+                </div>
+                <hr class="menu-divider">
+                <button class="account-menu-item" onclick="navigateToAuth()">
+                    <span>Login / Register</span>
+                </button>
+                <button class="account-menu-item logout-btn" onclick="handleLogout()">
+                    <span>Logout</span>
+                </button>
+            </div>
+        </div>
         </div>
     </div>
 
     <div id="main">
-        <div class="side-indicator">
-            <div class="side-indicator-inner"></div>
-        </div>
+
 
         <div id="home-page" class="page active">
             <div class="section">
@@ -118,7 +139,7 @@
                         </div>
                     </div>
                     <div class="player-controls">
-                        <button class="control-btn" id="btn-shuffle">
+                        <button class="control-btn" id="btn-shuffle" title="Keverés">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
                         </button>
                         <button class="control-btn" id="btn-prev">
@@ -130,14 +151,28 @@
                         <button class="control-btn" id="btn-next">
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
                         </button>
-                        <button class="control-btn" id="btn-repeat">
+                        <button class="control-btn" id="btn-repeat" title="Ismétlés">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 014-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 01-4 4H3"/></svg>
                         </button>
                     </div>
                     <div class="player-actions">
-                        <button class="control-btn" id="btn-like">
+                        <button class="control-btn" id="btn-like" title="Kedvencekhez adás">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l8.72-8.72 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
                         </button>
+                        <button class="control-btn" id="btn-add-to-playlist" title="Hozzáadás lejátszási listához">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                        </button>
+                        <div class="volume-container">
+                            <button class="control-btn" id="btn-volume-icon" title="Hangerő / Némítás">
+                                <svg id="volume-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                </svg>
+                            </button>
+                            <input type="range" id="volume-bar" min="0" max="1" step="0.01" value="1" class="volume-slider">
+                        </div>
                     </div>
                 </div>
 
@@ -151,6 +186,27 @@
                     <div class="queue-list" id="queue-container"></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="playlist-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal-btn" id="close-modal">&times;</span>
+            <h3>Új lejátszási lista</h3>
+            <input type="text" id="playlist-name-input" placeholder="Lista neve..." maxlength="30">
+            <input type="text" id="playlist-cover-input" placeholder="Borítókép URL (opcionális)...">
+            <div class="modal-actions">
+                <button id="cancel-playlist-btn" class="modal-btn cancel">Mégse</button>
+                <button id="save-playlist-btn" class="modal-btn confirm">Létrehozás</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="add-to-playlist-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal-btn" id="close-add-modal">&times;</span>
+            <h3>Hozzáadás listához</h3>
+            <div id="playlist-select-list" class="playlist-select-list"></div>
         </div>
     </div>
 

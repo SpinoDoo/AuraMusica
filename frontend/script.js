@@ -226,3 +226,148 @@ function getMockPlaylists() {
         { id: 2, name: "Workout", songCount: 5 }
     ];
 }
+
+
+let userPlaylists = JSON.parse(localStorage.getItem("user_playlists")) || [
+    { id: 1, name: "Favorites", songCount: 12 },
+    { id: 2, name: "Workout", songCount: 5 }
+];
+
+function savePlaylistsToStorage() {
+    localStorage.setItem("user_playlists", JSON.stringify(userPlaylists));
+}
+
+window.loadPlaylistsData = async function() {
+    const container = document.getElementById("playlists-grid");
+    if (!container) return;
+
+    container.innerHTML = userPlaylists.map(p => `
+        <div class="playlist-card">
+            <button class="playlist-delete-btn" data-id="${p.id}" title="Lista törlése">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+            <div class="playlist-cover-box"></div>
+            <div class="playlist-title">${p.name}</div>
+            <div class="playlist-count">${p.songCount || 0} song</div>
+        </div>
+    `).join("");
+
+    container.querySelectorAll(".playlist-delete-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const id = Number(btn.getAttribute("data-id"));
+            deletePlaylist(id);
+        });
+    });
+};
+
+function createNewPlaylist(name) {
+    if (!name || !name.trim()) return;
+    const newPlaylist = {
+        id: Date.now(),
+        name: name.trim(),
+        songCount: 0
+    };
+    userPlaylists.push(newPlaylist);
+    savePlaylistsToStorage();
+    loadPlaylistsData();
+    showToast(`"${newPlaylist.name}" lejátszási lista létrehozva`);
+}
+
+function deletePlaylist(id) {
+    const playlist = userPlaylists.find(p => p.id === id);
+    if (!playlist) return;
+
+    userPlaylists = userPlaylists.filter(p => p.id !== id);
+    savePlaylistsToStorage();
+    loadPlaylistsData();
+    showToast(`"${playlist.name}" törölve`);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const createBtn = document.getElementById("create-playlist-btn");
+    const modal = document.getElementById("playlist-modal");
+    const closeModal = document.getElementById("close-modal");
+    const cancelBtn = document.getElementById("cancel-playlist-btn");
+    const saveBtn = document.getElementById("save-playlist-btn");
+    const nameInput = document.getElementById("playlist-name-input");
+
+    if (createBtn && modal) {
+        createBtn.addEventListener("click", () => {
+            modal.classList.add("active");
+            if (nameInput) {
+                nameInput.value = "";
+                nameInput.focus();
+            }
+        });
+    }
+
+    const hideModal = () => {
+        if (modal) modal.classList.remove("active");
+    };
+
+    if (closeModal) closeModal.addEventListener("click", hideModal);
+    if (cancelBtn) cancelBtn.addEventListener("click", hideModal);
+
+    if (saveBtn) {
+        saveBtn.addEventListener("click", () => {
+            if (nameInput && nameInput.value.trim()) {
+                createNewPlaylist(nameInput.value);
+                hideModal();
+            }
+        });
+    }
+
+    if (nameInput) {
+        nameInput.addEventListener("keyup", (e) => {
+            if (e.key === "Enter" && nameInput.value.trim()) {
+                createNewPlaylist(nameInput.value);
+                hideModal();
+            }
+        });
+    }
+
+    const volumeBar = document.getElementById("volume-bar");
+    const volumeBtn = document.getElementById("btn-volume-icon");
+    const audioEl = document.getElementById("audio-player");
+    let lastVolume = 1;
+
+    if (volumeBar && audioEl) {
+        audioEl.volume = volumeBar.value;
+
+        volumeBar.addEventListener("input", (e) => {
+            const val = parseFloat(e.target.value);
+            audioEl.volume = val;
+            updateVolumeIcon(val);
+        });
+    }
+
+    if (volumeBtn && volumeBar && audioEl) {
+        volumeBtn.addEventListener("click", () => {
+            if (audioEl.volume > 0) {
+                lastVolume = audioEl.volume;
+                audioEl.volume = 0;
+                volumeBar.value = 0;
+            } else {
+                audioEl.volume = lastVolume || 1;
+                volumeBar.value = audioEl.volume;
+            }
+            updateVolumeIcon(audioEl.volume);
+        });
+    }
+
+    function updateVolumeIcon(vol) {
+        const icon = document.getElementById("volume-icon");
+        if (!icon) return;
+        if (vol === 0) {
+            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>`;
+        } else if (vol < 0.5) {
+            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>`;
+        } else {
+            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>`;
+        }
+    }
+});

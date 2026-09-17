@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="hu">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Musik</title>
+    <title>Musika</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -32,7 +32,7 @@
                 <div class="now-playing">
                     <img id="mini-cover" class="now-playing-cover" src="" alt="">
                     <div class="now-playing-info">
-                        <span id="mini-title" class="now-playing-title">Nincs lejátszás</span>
+                        <span id="mini-title" class="now-playing-title">Nincs lejátszásss</span>
                         <span id="mini-artist" class="now-playing-artist">-</span>
                     </div>
                 </div>
@@ -138,6 +138,15 @@
                         <button class="control-btn" id="btn-like">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l8.72-8.72 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
                         </button>
+                        <div class="volume-container">
+                            <button class="control-btn" id="btn-volume-icon" title="Hangerő / Némítás">
+                                <svg id="volume-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                </svg>
+                            </button>
+                            <input type="range" id="volume-bar" min="0" max="1" step="0.01" value="1" class="volume-slider">
+                        </div>
                     </div>
                 </div>
 
@@ -150,6 +159,18 @@
                     </div>
                     <div class="queue-list" id="queue-container"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="playlist-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal-btn" id="close-modal">&times;</span>
+            <h3>Új lejátszási lista</h3>
+            <input type="text" id="playlist-name-input" placeholder="Lista neve..." maxlength="30">
+            <div class="modal-actions">
+                <button id="cancel-playlist-btn" class="modal-btn cancel">Mégse</button>
+                <button id="save-playlist-btn" class="modal-btn confirm">Létrehozás</button>
             </div>
         </div>
     </div>
