@@ -150,6 +150,98 @@ app.post('/api/songs', (req, res) => {
 //     res.send('Server runnen!');
 // });
 
+app.get('/api/playlists', requireAuth, (req, res) => {
+    const playlists = db.prepare('SELECT * FROM playlists WHERE user_id = ?').all(req.user.id);
+
+    const playlistsWithSongs = playlists.map(playlist => {
+        const songs = db.prepare(`
+        SELECT songs.* FROM songs
+        JOIN playlist_songs ON songs.id = playlist_songs.song_id
+        WHERE playlist_songs.playlist_id = ?
+        ORDER BY playlist_songs.position
+        `).all(playlist.id).map(song => ({
+        ...song,
+        url: `/music/${song.filename}`,
+        cover_url: song.cover_path ? `/covers/${song.cover_path}` : null
+        }));
+
+        return {
+        id: playlist.id,
+        name: playlist.name,
+        song_count: songs.length,
+        songs
+        };
+    });
+
+    res.json(playlistsWithSongs);
+});
+
+app.post('/api/playlists', requireAuth, (req, res) => {
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+        console.log('WHAT');
+        return res.status(400).json({ error: 'name is required' });
+    }
+
+    const insert = db.prepare('INSERT INTO playlists (user_id, name) VALUES (?, ?)');
+    const result = insert.run(req.user.id, name.trim());
+
+    res.status(201).json({ id: result.lastInsertRowid, name: name.trim(), song_count: 0, songs: [] });
+});
+
+app.delete('/api/playlists/:id', requireAuth, (req, res) => {
+    const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(req.params.id);
+
+    if (!playlist) {
+        return res.status(404).json({ error: 'playlist not found' });
+    }
+    if (playlist.user_id !== req.user.id) {
+        return res.status(403).json({ error: 'not your playlist' });
+    }
+
+    db.prepare('DELETE FROM playlists WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+});
+
+app.post('/api/playlists/:id/songs', requireAuth, (req, res) => {
+    const { songId } = req.body;
+    const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(req.params.id);
+
+    if (!playlist) return res.status(404).json({ error: 'playlist not found' });
+    if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'not your playlist' });
+
+    const song = db.prepare('SELECT * FROM songs WHERE id = ?').get(songId);
+    if (!song) return res.status(404).json({ error: 'song not found' });
+
+    const alreadyIn = db.prepare(
+        'SELECT * FROM playlist_songs WHERE playlist_id = ? AND song_id = ?'
+    ).get(req.params.id, songId);
+    if (alreadyIn) return res.status(409).json({ error: 'song already in playlist' });
+
+    const maxPos = db.prepare(
+        'SELECT MAX(position) as maxPos FROM playlist_songs WHERE playlist_id = ?'
+    ).get(req.params.id);
+    const nextPosition = (maxPos.maxPos ?? -1) + 1;
+
+    db.prepare(
+        'INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES (?, ?, ?)'
+    ).run(req.params.id, songId, nextPosition);
+
+    res.status(201).json({ success: true });
+});
+
+app.delete('/api/playlists/:id/songs/:songId', requireAuth, (req, res) => {
+    const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(req.params.id);
+
+    if (!playlist) return res.status(404).json({ error: 'playlist not found' });
+    if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'not your playlist' });
+
+    db.prepare(
+        'DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?'
+    ).run(req.params.id, req.params.songId);
+
+    res.json({ success: true });
+});
 app.listen(3000, '0.0.0.0', () => {
     console.log("Server is running on 3000");
 });

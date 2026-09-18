@@ -28,10 +28,10 @@ const api = {
         return this.fetchData(`/playlists/${id}`, 'DELETE');
     },
     async addSongToPlaylist(playlistId, songId) {
-        
+        return this.fetchData(`/playlists/${playlistId}/songs`, 'POST', { songId });
     },
     async removeSongFromPlaylist(playlistId, songId) {
-
+        return this.fetchData(`/playlists/${playlistId}/${songId}`, 'DELETE');
     },
     async fetchData(endpoint, method = "GET", body = null) {
         try {
@@ -39,7 +39,7 @@ const api = {
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const options = { method, headers: { "Content-Type": "application/json" } };
+            const options = { method, headers };
             if (body) options.body = JSON.stringify(body);
             
             const res = await fetch(`${API_BASE_URL}${endpoint}`, options);
@@ -316,7 +316,7 @@ async function createNewPlaylist(name, cover_url = "") {
         return;
     }
     await loadPlaylistsData();
-    showToast(`"${newPlaylist.name}" lejátszási lista létrehozva`);
+    showToast(`"${result.name}" lejátszási lista létrehozva`);
 }
 
 async function deletePlaylist(id) {
@@ -476,41 +476,33 @@ function updateLikeButtonUI() {
     if (!likeBtn || !state.currentTrack) return;
 
     const favList = userPlaylists.find(p => p.name === "Favorites");
-    const isLiked = favList && favList.songs && favList.songs.some(s => s.title === state.currentTrack.title && s.artist === state.currentTrack.artist);
+    const isLiked = favList && favList.songs && favList.songs.some(s => s.id === state.currentTrack.id);
 
-    if (isLiked) {
-        likeBtn.classList.add("liked");
-    } else {
-        likeBtn.classList.remove("liked");
-    }
+    likeBtn.classList.toggle("liked", isLiked);
 }
 
-function toggleLikeCurrentTrack() {
+async function toggleLikeCurrentTrack() {
     if (!state.currentTrack) return;
 
     let favList = userPlaylists.find(p => p.name === "Favorites");
     if (!favList) {
-        favList = { id: Date.now(), name: "Favorites", cover_url: "", songCount: 0, songs: [] };
+        favList = await createNewPlaylist('Favorites');
+        if (!favList) return;
         userPlaylists.unshift(favList);
     }
-    if (!favList.songs) favList.songs = [];
+    
+    const isLiked = favList.songs && favList.songs.some(s => s.id === state.currentTrack.id);
 
-    const existingIdx = favList.songs.findIndex(s => s.title === state.currentTrack.title && s.artist === state.currentTrack.artist);
-
-    if (existingIdx !== -1) {
-        favList.songs.splice(existingIdx, 1);
-        showToast("Eltávolítva a Kedvencek közül");
+    if (isLiked) {
+        await api.removeSongFromPlaylist(favList.id, state.currentTrack.id);
+        showToast('Song removed from liked songs');
     } else {
-        favList.songs.push(state.currentTrack);
-        showToast("Hozzáadva a Kedvencekhez");
+        await api.addSongToPlaylist(favList.id, state.currentTrack.id);
+        showToast('Song added to liked songs');
     }
 
-    favList.songCount = favList.songs.length;
-    savePlaylistsToStorage();
+    await loadPlaylistsData();
     updateLikeButtonUI();
-    if (document.getElementById("playlist-page").classList.contains("active")) {
-        loadPlaylistsData();
-    }
 }
 
 function playNextTrack() {
@@ -563,21 +555,18 @@ function openAddToPlaylistModal() {
     `).join("");
 
     container.querySelectorAll(".playlist-select-item").forEach(item => {
-        item.addEventListener("click", () => {
+        item.addEventListener("click", async () => {
             const id = Number(item.getAttribute("data-id"));
-            const targetPlaylist = userPlaylists.find(p => p.id === id);
-            if (targetPlaylist) {
-                if (!targetPlaylist.songs) targetPlaylist.songs = [];
-                const exists = targetPlaylist.songs.some(s => s.title === state.currentTrack.title && s.artist === state.currentTrack.artist);
-                if (!exists) {
-                    targetPlaylist.songs.push(state.currentTrack);
-                    targetPlaylist.songCount = targetPlaylist.songs.length;
-                    savePlaylistsToStorage();
-                    showToast(`Hozzáadva a(z) "${targetPlaylist.name}" listához`);
-                } else {
-                    showToast("Ez a zene már benne van a listában!");
-                }
+            const result = await api.addSongToPlaylist(id, state.currentTrack.id);
+            
+            if (!result) {
+                showToast('This song is already in the playlist');
+            } else {
+                const targetPlaylist = userPlaylists.find(s => s.id === id);
+                showToast(`Song added to ${targetPlaylist.name}`);
+                await loadPlaylistsData();
             }
+            
             modal.classList.remove("active");
         });
     });
