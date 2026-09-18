@@ -24,13 +24,22 @@ const api = {
     async createPlaylist(name) {
         return this.fetchData("/playlists", "POST", { name });
     },
+    async deletePlaylist(id) {
+        return this.fetchData(`/playlists/${id}`, 'DELETE');
+    },
+    async addSongToPlaylist(playlistId, songId) {
+        return this.fetchData(`/playlists/${playlistId}/songs`, 'POST', { songId });
+    },
+    async removeSongFromPlaylist(playlistId, songId) {
+        return this.fetchData(`/playlists/${playlistId}/${songId}`, 'DELETE');
+    },
     async fetchData(endpoint, method = "GET", body = null) {
         try {
             const token = localStorage.getItem('token');
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const options = { method, headers: { "Content-Type": "application/json" } };
+            const options = { method, headers };
             if (body) options.body = JSON.stringify(body);
             
             const res = await fetch(`${API_BASE_URL}${endpoint}`, options);
@@ -99,12 +108,12 @@ function playTrack(track, queue = []) {
 function updatePlayerUI(track) {
     document.getElementById("mini-title").innerText = track.title;
     document.getElementById("mini-artist").innerText = track.artist;
-    document.getElementById("mini-cover").src = track.cover_path || "";
+    document.getElementById("mini-cover").src = track.cover_url || "";
 
     document.getElementById("player-title").innerText = track.title;
     document.getElementById("player-artist").innerText = track.artist;
     document.getElementById("player-album").innerText = track.album || "";
-    document.getElementById("player-cover").src = track.cover_path || "";
+    document.getElementById("player-cover").src = track.cover_url || "";
 
     playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
 }
@@ -169,7 +178,7 @@ function renderGrid(items, containerId, onClick) {
     const container = document.getElementById(containerId);
     container.innerHTML = items.map((item, index) => `
         <div class="card" data-index="${index}">
-            <img class="card-cover" src="${item.cover_path || ''}" alt="">
+            <img class="card-cover" src="${item.cover_url || ''}" alt="">
             <div class="card-title">${item.title || item.name}</div>
             <div class="card-subtitle">${item.artist || 'Album'}</div>
         </div>
@@ -189,7 +198,7 @@ function renderSongList(songs, containerId) {
     container.innerHTML = songs.map((song, index) => `
         <div class="song-item" data-index="${index}">
             <div class="song-item-left">
-                <img class="song-cover" src="${song.cover_path || 'https://picsum.photos/seed/' + (song.id || index) + '/100'}" alt="">
+                <img class="song-cover" src="${song.cover_url || 'https://picsum.photos/seed/' + (song.id || index) + '/100'}" alt="">
                 <div class="song-details">
                     <span class="song-name">${song.title}</span>
                     <span class="song-artist">${song.artist}</span>
@@ -241,18 +250,23 @@ function getMockAlbums() {
    PLAYLISTS, KÉP MEGADÁS ÉS LEJÁTSZÁS FELÜLETRE LÉPÉS
    ========================================================================== */
 
-let userPlaylists = JSON.parse(localStorage.getItem("user_playlists")) || [
-    { id: 1, name: "Favorites", cover_path: "", songCount: 0, songs: [] },
-    { id: 2, name: "Workout", cover_path: "", songCount: 0, songs: [] }
-];
+// let userPlaylists = JSON.parse(localStorage.getItem("user_playlists")) || [
+//     { id: 1, name: "Favorites", cover_url: "", songCount: 0, songs: [] },
+//     { id: 2, name: "Workout", cover_url: "", songCount: 0, songs: [] }
+// ];
 
-function savePlaylistsToStorage() {
-    localStorage.setItem("user_playlists", JSON.stringify(userPlaylists));
-}
+// function savePlaylistsToStorage() {
+//     localStorage.setItem("user_playlists", JSON.stringify(userPlaylists));
+// }
+
+let userPlaylists = [];
 
 window.loadPlaylistsData = async function() {
     const container = document.getElementById("playlists-grid");
     if (!container) return;
+
+    const playlists = await api.getPlaylists();
+    userPlaylists = playlists || [];
 
     container.innerHTML = userPlaylists.map(p => `
         <div class="playlist-card" data-id="${p.id}">
@@ -263,7 +277,7 @@ window.loadPlaylistsData = async function() {
                 </svg>
             </button>
             <div class="playlist-cover-box">
-                ${p.cover_path ? `<img class="playlist-cover-img" src="${p.cover_path}" alt="${p.name}">` : ''}
+                ${p.cover_url ? `<img class="playlist-cover-img" src="${p.cover_url}" alt="${p.name}">` : ''}
             </div>
             <div class="playlist-title">${p.name}</div>
             <div class="playlist-count">${p.songs ? p.songs.length : (p.songCount || 0)} song</div>
@@ -293,28 +307,28 @@ window.loadPlaylistsData = async function() {
     });
 };
 
-function createNewPlaylist(name, cover_path = "") {
+async function createNewPlaylist(name, cover_url = "") {
     if (!name || !name.trim()) return;
-    const newPlaylist = {
-        id: Date.now(),
-        name: name.trim(),
-        cover_path: cover_path.trim(),
-        songCount: 0,
-        songs: []
-    };
-    userPlaylists.push(newPlaylist);
-    savePlaylistsToStorage();
-    loadPlaylistsData();
-    showToast(`"${newPlaylist.name}" lejátszási lista létrehozva`);
+
+    const result = await api.createPlaylist(name.trim());
+    if (!result) {
+        showToast('Nem sikerült létrehozni a playlistet');
+        return;
+    }
+    await loadPlaylistsData();
+    showToast(`"${result.name}" lejátszási lista létrehozva`);
 }
 
-function deletePlaylist(id) {
+async function deletePlaylist(id) {
     const playlist = userPlaylists.find(p => p.id === id);
     if (!playlist) return;
 
-    userPlaylists = userPlaylists.filter(p => p.id !== id);
-    savePlaylistsToStorage();
-    loadPlaylistsData();
+    const result = await deletePlaylist(playlist.id);
+    if (!result){
+        showToast("Couldn't delete playlist");
+        return;
+    }
+    await loadPlaylistsData();
     showToast(`"${playlist.name}" törölve`);
 }
 
@@ -436,7 +450,7 @@ function renderQueue() {
     queueContainer.innerHTML = state.queue.map((song, idx) => `
         <div class="queue-item ${idx === state.currentIndex ? 'active' : ''}" data-index="${idx}">
             <div class="queue-item-left">
-                <img class="queue-cover" src="${song.cover_path || ''}" alt="">
+                <img class="queue-cover" src="${song.cover_url || ''}" alt="">
                 <div class="song-details">
                     <span class="song-name">${song.title}</span>
                     <span class="song-artist">${song.artist}</span>
@@ -462,41 +476,33 @@ function updateLikeButtonUI() {
     if (!likeBtn || !state.currentTrack) return;
 
     const favList = userPlaylists.find(p => p.name === "Favorites");
-    const isLiked = favList && favList.songs && favList.songs.some(s => s.title === state.currentTrack.title && s.artist === state.currentTrack.artist);
+    const isLiked = favList && favList.songs && favList.songs.some(s => s.id === state.currentTrack.id);
 
-    if (isLiked) {
-        likeBtn.classList.add("liked");
-    } else {
-        likeBtn.classList.remove("liked");
-    }
+    likeBtn.classList.toggle("liked", isLiked);
 }
 
-function toggleLikeCurrentTrack() {
+async function toggleLikeCurrentTrack() {
     if (!state.currentTrack) return;
 
     let favList = userPlaylists.find(p => p.name === "Favorites");
     if (!favList) {
-        favList = { id: Date.now(), name: "Favorites", cover_path: "", songCount: 0, songs: [] };
+        favList = await createNewPlaylist('Favorites');
+        if (!favList) return;
         userPlaylists.unshift(favList);
     }
-    if (!favList.songs) favList.songs = [];
+    
+    const isLiked = favList.songs && favList.songs.some(s => s.id === state.currentTrack.id);
 
-    const existingIdx = favList.songs.findIndex(s => s.title === state.currentTrack.title && s.artist === state.currentTrack.artist);
-
-    if (existingIdx !== -1) {
-        favList.songs.splice(existingIdx, 1);
-        showToast("Eltávolítva a Kedvencek közül");
+    if (isLiked) {
+        await api.removeSongFromPlaylist(favList.id, state.currentTrack.id);
+        showToast('Song removed from liked songs');
     } else {
-        favList.songs.push(state.currentTrack);
-        showToast("Hozzáadva a Kedvencekhez");
+        await api.addSongToPlaylist(favList.id, state.currentTrack.id);
+        showToast('Song added to liked songs');
     }
 
-    favList.songCount = favList.songs.length;
-    savePlaylistsToStorage();
+    await loadPlaylistsData();
     updateLikeButtonUI();
-    if (document.getElementById("playlist-page").classList.contains("active")) {
-        loadPlaylistsData();
-    }
 }
 
 function playNextTrack() {
@@ -549,21 +555,18 @@ function openAddToPlaylistModal() {
     `).join("");
 
     container.querySelectorAll(".playlist-select-item").forEach(item => {
-        item.addEventListener("click", () => {
+        item.addEventListener("click", async () => {
             const id = Number(item.getAttribute("data-id"));
-            const targetPlaylist = userPlaylists.find(p => p.id === id);
-            if (targetPlaylist) {
-                if (!targetPlaylist.songs) targetPlaylist.songs = [];
-                const exists = targetPlaylist.songs.some(s => s.title === state.currentTrack.title && s.artist === state.currentTrack.artist);
-                if (!exists) {
-                    targetPlaylist.songs.push(state.currentTrack);
-                    targetPlaylist.songCount = targetPlaylist.songs.length;
-                    savePlaylistsToStorage();
-                    showToast(`Hozzáadva a(z) "${targetPlaylist.name}" listához`);
-                } else {
-                    showToast("Ez a zene már benne van a listában!");
-                }
+            const result = await api.addSongToPlaylist(id, state.currentTrack.id);
+            
+            if (!result) {
+                showToast('This song is already in the playlist');
+            } else {
+                const targetPlaylist = userPlaylists.find(s => s.id === id);
+                showToast(`Song added to ${targetPlaylist.name}`);
+                await loadPlaylistsData();
             }
+            
             modal.classList.remove("active");
         });
     });
@@ -642,7 +645,7 @@ window.testPlaylist = function(count = 50) {
             artist: `Teszt Előadó ${(i % 5) + 1}`,
             album: `Album ${(i % 3) + 1}`,
             duration: `03:${(10 + (i % 50)).toString().padStart(2, '0')}`,
-            cover_path: `https://picsum.photos/seed/${i + 100}/200`,
+            cover_url: `https://picsum.photos/seed/${i + 100}/200`,
             url: `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${songIndex}.mp3`
         };
     });
@@ -652,7 +655,7 @@ window.testPlaylist = function(count = 50) {
         testPlaylist = {
             id: Date.now(),
             name: "Sok Zenés Teszt",
-            cover_path: "https://picsum.photos/seed/testlist/300",
+            cover_url: "https://picsum.photos/seed/testlist/300",
             songCount: count,
             songs: mockSongs
         };
