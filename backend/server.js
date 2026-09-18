@@ -127,7 +127,7 @@ app.get('/api/songs', (req, res) => {
     const songsWithUrls = songs.map(song => ({
         ...song,
         url: `/music/${song.filename}`,
-        cover: song.cover_path ? `/covers/${song.cover_path}` : null
+        cover_url: song.cover_path ? `/covers/${song.cover_path}` : null
     }));
     res.json(songsWithUrls);
 });
