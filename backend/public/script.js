@@ -698,3 +698,36 @@ function handleLogout() {
     alert('Sikeresen kijelentkeztél!');
     window.location.reload();
 }
+
+// Indicator for the menupoints
+document.addEventListener('DOMContentLoaded', () => {
+    const navItems = document.querySelectorAll('.header-left .nav-item');
+    const indicator = document.querySelector('.nav-indicator');
+
+    function updateIndicator(targetElement) {
+        if (!targetElement || !indicator) return;
+
+        indicator.style.left = `${targetElement.offsetLeft}px`;
+        indicator.style.width = `${targetElement.offsetWidth}px`;
+    }
+
+    const initialActive = document.querySelector('.header-left .nav-item.active');
+    if (initialActive) {
+        setTimeout(() => updateIndicator(initialActive), 50);
+    }
+
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            navItems.forEach(nav => nav.classList.remove('active'));
+            const currentButton = e.currentTarget;
+            currentButton.classList.add('active');
+
+            updateIndicator(currentButton);
+        });
+    });
+
+    window.addEventListener('resize', () => {
+        const activeItem = document.querySelector('.header-left .nav-item.active');
+        updateIndicator(activeItem);
+    });
+});
