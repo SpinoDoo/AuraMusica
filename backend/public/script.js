@@ -731,3 +731,31 @@ document.addEventListener('DOMContentLoaded', () => {
         updateIndicator(activeItem);
     });
 });
+
+//Add song mechanic
+document.addEventListener("DOMContentLoaded", () => {
+    const addMusicBtn = document.getElementById("add-music-btn");
+    const modal = document.getElementById("add-song-modal");
+    const closeModal = document.getElementById("close-add-song-modal");
+    const cancelBtn = document.getElementById("cancel-add-song-btn");
+    const saveBtn = document.getElementById("save-song-btn");
+
+    const openModal = () => {
+        if (modal) {
+            modal.classList.add("active");
+            document.getElementById("song-title-input").value = "";
+            document.getElementById("song-artist-input").value = "";
+            document.getElementById("song-file-input").value = "";
+            document.getElementById("song-cover-file-input").value = "";
+        }
+    };
+
+    const closeModalWindow = () => {
+        if (modal) modal.classList.remove("active");
+    };
+
+    if (addMusicBtn) addMusicBtn.addEventListener("click", openModal);
+    if (closeModal) closeModal.addEventListener("click", closeModalWindow);
+    if (cancelBtn) cancelBtn.addEventListener("click", closeModalWindow);
+    if (saveBtn) saveBtn.addEventListener("click", closeModalWindow);
+});

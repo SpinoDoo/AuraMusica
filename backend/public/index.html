@@ -41,21 +41,16 @@
         </div>
 
         <div class="header-right">
-            <!-- <button class="nav-item">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-                </svg>
-            </button> -->
-            <!-- <button class="nav-item">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <circle cx="12" cy="10" r="3"/>
-                    <path d="M6.168 18.849C7.487 16.52 9.613 15 12 15s4.513 1.52 5.832 3.849"/>
-                </svg>
-            </button> -->
+            <button class="add-playlist-btn" id="add-music-btn" title="Zene hozzáadása">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M9 18V5l12-2v13M9 9l12-2"/>
+                            <circle cx="6" cy="18" r="3"/>
+                            <circle cx="18" cy="16" r="3"/>
+                        </svg>
+                    </button>
+     
                 <div class="account-dropdown-container">
             <button class="nav-item" id="btn-account" onclick="toggleAccountMenu(event)">
-                <!-- A fiók SVG ikonod -->
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
@@ -85,6 +80,7 @@
         <div id="home-page" class="page active">
             <div class="section">
                 <h2 class="section-title">Recents</h2>
+                
                 <div class="grid-container" id="recents-grid"></div>
             </div>
             <div class="section">
@@ -103,6 +99,7 @@
             </div>
             <div class="section">
                 <h2 class="section-title">Recents</h2>
+                
                 <div class="tag-container" id="recent-searches"></div>
             </div>
             <div class="section">
@@ -114,6 +111,7 @@
         <div id="playlist-page" class="page">
             <div class="playlist-header">
                 <h2 class="section-title">Playlists</h2>
+                
                 <button class="add-playlist-btn" id="create-playlist-btn">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <path d="M12 5v14M5 12h14"/>
@@ -208,6 +206,36 @@
             <span class="close-modal-btn" id="close-add-modal">&times;</span>
             <h3>Hozzáadás listához</h3>
             <div id="playlist-select-list" class="playlist-select-list"></div>
+        </div>
+    </div>
+
+    <div id="add-song-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal-btn" id="close-add-song-modal">&times;</span>
+            <h3>Add music</h3>
+            
+            <div class="input-group">
+                <input type="text" id="song-title-input" placeholder="Name...">
+            </div>
+            
+            <div class="input-group">
+                <input type="text" id="song-artist-input" placeholder="Artist...">
+            </div>
+
+            <div class="input-group">
+                <label for="song-file-input">Audio files (MP3, WAV...)</label>
+                <input type="file" id="song-file-input" accept="audio/*">
+            </div>
+
+            <div class="input-group">
+                <label for="song-cover-file-input">Choose cover (PNG, JPG...)</label>
+                <input type="file" id="song-cover-file-input" accept="image/*">
+            </div>
+
+            <div class="modal-actions">
+                <button id="cancel-add-song-btn" class="modal-btn cancel">Back</button>
+                <button id="save-song-btn" class="modal-btn confirm">Add</button>
+            </div>
         </div>
     </div>
 
