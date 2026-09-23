@@ -256,3 +256,27 @@ app.delete('/api/playlists/:id/songs/:songId', requireAuth, (req, res) => {
 app.listen(3000, '0.0.0.0', () => {
     console.log("Server is running on 3000");
 });
+
+const Fuse = require('fuse.js');
+
+app.get('/api/search', (req, res) => {
+    const query = req.query.q;
+    if (!query || !query.trim()) return res.json([]);
+
+    const allSongs = db.prepare('SELECT * FROM songs').all();
+
+    const fuse = new Fuse(allSongs, {
+        keys: ['title', 'artist'],
+        threshold: 0.4,
+    });
+
+    const result = fuse.search(query.trim()).map(r => r.item);
+
+    const songsWithUrls = result.map(song => ({
+        ...song,
+        url: `/music/${song.filename}`,
+        cover: song.cover_path ? `/covers/${song.cover_path}` : null
+    }));
+
+    res.json(songsWithUrls);
+});
