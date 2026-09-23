@@ -33,6 +33,25 @@ const api = {
     async removeSongFromPlaylist(playlistId, songId) {
         return this.fetchData(`/playlists/${playlistId}/${songId}`, 'DELETE');
     },
+    async uploadSong(formData){
+        try{
+            const token = localStorage.getItem('token');
+            const headers = {};
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            const res = await fetch(`${API_BASE_URL}/upload`, {
+                method: 'POST',
+                headers,
+                body: formData
+            });
+
+            if (!res.ok) throw new Error('Upload failed');
+            return await res.json();
+        } catch (err) {
+            console.log('Upload failed: ', err);
+            return null;
+        }
+    },
     async fetchData(endpoint, method = "GET", body = null) {
         try {
             const token = localStorage.getItem('token');
@@ -757,5 +776,32 @@ document.addEventListener("DOMContentLoaded", () => {
     if (addMusicBtn) addMusicBtn.addEventListener("click", openModal);
     if (closeModal) closeModal.addEventListener("click", closeModalWindow);
     if (cancelBtn) cancelBtn.addEventListener("click", closeModalWindow);
-    if (saveBtn) saveBtn.addEventListener("click", closeModalWindow);
+    if (saveBtn) saveBtn.addEventListener("click", async () => {
+        const title     = document.getElementById("song-title-input").value.trim();
+        const artist    = document.getElementById("song-artist-input").value.trim();
+        const songFile  = document.getElementById("song-file-input").files[0];
+        const coverFile = document.getElementById("song-cover-file-input").files[0];
+
+        if (!songFile) {
+            showToast('Choose an mp3 file!');
+            return;         
+        }
+
+        const formData = new FormData();
+        formData.append('song', songFile);
+        if (coverFile) formData.append('cover', songFile);
+        formData.append('title', title);
+        formData.append('artist', artist);
+
+        const result = await api.uploadSong(formData);
+        if (!result) {
+            showToast('Upload failed!');
+            return;
+        }
+
+        showToast(`"${result.title} || ${title}" uploaded successfully`);
+        closeModalWindow();
+
+        if (typeof loadHomePageData === 'function') loadHomePageData();
+    });
 });

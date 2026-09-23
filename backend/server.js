@@ -75,51 +75,62 @@ app.post('/api/login', async (req, res) => {
 });
 
 const storage = multer.diskStorage({
-    destination: (req, res, cb )=> {
-        cb(null, 'music/');
+    destination: (req, file, cb )=> {
+        cb(null, file.fieldname === 'cover' ? 'covers/' : 'music/');
     },
-    filename: (req, res, cb) => {
+    filename: (req, file, cb) => {
         const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        cb(null, unique + '.mp3');
+        const ext = file.fieldname === 'cover' ? path.extname(file.originalname) || '.jpg' : '.mp3';
+        cb(null, unique + ext);
     }
 });
 
 const upload = multer({
-    storage
-//   storage,
-//   fileFilter: (req, file, cb) => {
-//     if (file.mimetype !== 'audio/mpeg') {
-//       return cb(new Error('Only MP3 files allowed'));
-//     }
-//     cb(null, true);
-//   }
+    storage,
+    fileFilter: (req, file, cb) => {
+        if (file.fieldname === 'song' && file.mimetype !== 'audio/mpeg'){
+            return cb(new Error('Only mp3s allowed for the song'));
+        }
+        if (file.fieldname === 'cover' && !file.mimetype.startsWith('image/')){
+            return cb(new Error('Cover must be an image'));
+        }
+        cb(null, true);
+    }
 });
 
-app.post('/api/upload', upload.single('song'), async (req, res) => {
-    const file = req.file;
+app.post('/api/upload', upload.fields([
+    {   name: 'song',  maxCount: 1   },
+    {   name: 'cover', maxCount: 1  }
+]), async (req, res) => {
+    const songFile = req.files?.song?.[0];
+    const coverFile = req.files?.cover?.[0];
     const { title, artist } = req.body;
 
-    if (!file){
+    if (!songFile){
         return res.status(400).json({ error: 'No file uploaded' });
     }
 
     let cover_path = null;
 
-    try {
-        const metadata = await mm.parseFile(file.path);
-        const picture = metadata.common.picture?.[0];
-        if (picture) {
-        cover_path = file.filename.replace('.mp3', '.jpg');
-        fs.writeFileSync(`covers/${cover_path}`, picture.data);
+    if (coverFile) {
+        cover_path = coverFile.filename;
+    } else {
+        try {
+            const metadata = await mm.parseFile(file.path);
+            const picture = metadata.common.picture?.[0];
+            if (picture) {
+                cover_path = songFile.filename.replace('.mp3', '.jpg');
+                fs.writeFileSync(`covers/${cover_path}`, picture.data);
+            }
+        } catch (err) {
+            console.error('Cover extraction failed:', err);
         }
-    } catch (err) {
-        console.error('Cover extraction failed:', err);
     }
 
     const insert = db.prepare('INSERT INTO songs (title, artist, filename, cover_path) VALUES (?, ?, ?, ?)');
-    const result = insert.run(title || file.originalname, artist || null, file.filename, cover_path);
+    const result = insert.run(title || songFile.originalname, artist || null, songFile.filename, cover_path);
 
-    res.status(201).json({ id: result.lastInsertRowid, title, artist, filename: file.filename });
+    res.status(201).json({ id: result.lastInsertRowid, title, artist, filename: songFile.filename });
 });
 
 app.get('/api/songs', (req, res) => {
