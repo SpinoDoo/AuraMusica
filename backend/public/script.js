@@ -15,6 +15,9 @@ const api = {
     async getAlbums() {
         return this.fetchData("/albums");
     },
+    async getAlbum(id) {
+        return this.fetchData(`/albums/${id}`);
+    },
     async search(query) {
         return this.fetchData(`/search?q=${encodeURIComponent(query)}`);
     },
@@ -127,12 +130,12 @@ function playTrack(track, queue = []) {
 function updatePlayerUI(track) {
     document.getElementById("mini-title").innerText = track.title;
     document.getElementById("mini-artist").innerText = track.artist;
-    document.getElementById("mini-cover").src = track.cover_url || "";
+    document.getElementById("mini-cover").src = track.cover || "";
 
     document.getElementById("player-title").innerText = track.title;
     document.getElementById("player-artist").innerText = track.artist;
     document.getElementById("player-album").innerText = track.album || "";
-    document.getElementById("player-cover").src = track.cover_url || "";
+    document.getElementById("player-cover").src = track.cover || "";
 
     playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
 }
@@ -185,19 +188,32 @@ function setupSearch() {
     });
 }
 
+async function playAlbum(album) {
+    const fullAlbum = await api.getAlbum(album.id);
+
+    if (!fullAlbum || !fullAlbum.songs || fullAlbum.songs.length === 0) {
+        showToast("This album has no songs yet.");
+        return;
+    }
+
+    navigateToPage("player-page");
+    playTrack(fullAlbum.songs[0], fullAlbum.songs);
+    showToast(`Playing "${fullAlbum.title}"`);
+}
+
 async function loadHomePageData() {
     const recents = await api.getRecents() || getMockSongs();
     const albums = await api.getAlbums() || getMockAlbums();
 
     renderGrid(recents, "recents-grid", (item) => playTrack(item, recents));
-    renderGrid(albums, "albums-grid");
+    renderGrid(albums, "albums-grid", (album) => playAlbum(album));
 }
 
 function renderGrid(items, containerId, onClick) {
     const container = document.getElementById(containerId);
     container.innerHTML = items.map((item, index) => `
         <div class="card" data-index="${index}">
-            <img class="card-cover" src="${item.cover_url || ''}" alt="">
+            <img class="card-cover" src="${item.cover || ''}" alt="">
             <div class="card-title">${item.title || item.name}</div>
             <div class="card-subtitle">${item.artist || 'Album'}</div>
         </div>
@@ -217,7 +233,7 @@ function renderSongList(songs, containerId) {
     container.innerHTML = songs.map((song, index) => `
         <div class="song-item" data-index="${index}">
             <div class="song-item-left">
-                <img class="song-cover" src="${song.cover_url || 'https://picsum.photos/seed/' + (song.id || index) + '/100'}" alt="">
+                <img class="song-cover" src="${song.cover || 'https://picsum.photos/seed/' + (song.id || index) + '/100'}" alt="">
                 <div class="song-details">
                     <span class="song-name">${song.title}</span>
                     <span class="song-artist">${song.artist}</span>
@@ -270,8 +286,8 @@ function getMockAlbums() {
    ========================================================================== */
 
 // let userPlaylists = JSON.parse(localStorage.getItem("user_playlists")) || [
-//     { id: 1, name: "Favorites", cover_url: "", songCount: 0, songs: [] },
-//     { id: 2, name: "Workout", cover_url: "", songCount: 0, songs: [] }
+//     { id: 1, name: "Favorites", cover: "", songCount: 0, songs: [] },
+//     { id: 2, name: "Workout", cover: "", songCount: 0, songs: [] }
 // ];
 
 // function savePlaylistsToStorage() {
@@ -296,7 +312,7 @@ window.loadPlaylistsData = async function() {
                 </svg>
             </button>
             <div class="playlist-cover-box">
-                ${p.cover_url ? `<img class="playlist-cover-img" src="${p.cover_url}" alt="${p.name}">` : ''}
+                ${p.cover ? `<img class="playlist-cover-img" src="${p.cover}" alt="${p.name}">` : ''}
             </div>
             <div class="playlist-title">${p.name}</div>
             <div class="playlist-count">${p.songs ? p.songs.length : (p.songCount || 0)} song</div>
@@ -326,7 +342,7 @@ window.loadPlaylistsData = async function() {
     });
 };
 
-async function createNewPlaylist(name, cover_url = "") {
+async function createNewPlaylist(name, cover = "") {
     if (!name || !name.trim()) return;
 
     const result = await api.createPlaylist(name.trim());
@@ -469,7 +485,7 @@ function renderQueue() {
     queueContainer.innerHTML = state.queue.map((song, idx) => `
         <div class="queue-item ${idx === state.currentIndex ? 'active' : ''}" data-index="${idx}">
             <div class="queue-item-left">
-                <img class="queue-cover" src="${song.cover_url || ''}" alt="">
+                <img class="queue-cover" src="${song.cover || ''}" alt="">
                 <div class="song-details">
                     <span class="song-name">${song.title}</span>
                     <span class="song-artist">${song.artist}</span>
@@ -664,7 +680,7 @@ window.testPlaylist = function(count = 50) {
             artist: `Teszt Előadó ${(i % 5) + 1}`,
             album: `Album ${(i % 3) + 1}`,
             duration: `03:${(10 + (i % 50)).toString().padStart(2, '0')}`,
-            cover_url: `https://picsum.photos/seed/${i + 100}/200`,
+            cover: `https://picsum.photos/seed/${i + 100}/200`,
             url: `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${songIndex}.mp3`
         };
     });
@@ -674,7 +690,7 @@ window.testPlaylist = function(count = 50) {
         testPlaylist = {
             id: Date.now(),
             name: "Sok Zenés Teszt",
-            cover_url: "https://picsum.photos/seed/testlist/300",
+            cover: "https://picsum.photos/seed/testlist/300",
             songCount: count,
             songs: mockSongs
         };
@@ -789,7 +805,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const formData = new FormData();
         formData.append('song', songFile);
-        if (coverFile) formData.append('cover', songFile);
+        if (coverFile) formData.append('cover', coverFile);
         formData.append('title', title);
         formData.append('artist', artist);
 

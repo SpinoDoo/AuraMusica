@@ -92,57 +92,132 @@ const upload = multer({
             return cb(new Error('Only mp3s allowed for the song'));
         }
         if (file.fieldname === 'cover' && !file.mimetype.startsWith('image/')){
+            console.log(file.mimetype);
             return cb(new Error('Cover must be an image'));
         }
         cb(null, true);
     }
 });
 
-app.post('/api/upload', upload.fields([
-    {   name: 'song',  maxCount: 1   },
-    {   name: 'cover', maxCount: 1  }
+function resolveAlbumId(albumTitle, { artist, year, coverPath } = {}) {
+  if (!albumTitle) return null;
+
+  const trimmedTitle = albumTitle.trim();
+  if (!trimmedTitle) return null;
+
+  let album = db.prepare('SELECT id FROM albums WHERE title = ?').get(trimmedTitle);
+
+  if (!album) {
+    const insertAlbum = db.prepare(
+      'INSERT INTO albums (title, artist, release_year, cover_path) VALUES (?, ?, ?, ?)'
+    );
+    const result = insertAlbum.run(trimmedTitle, artist || null, year || null, coverPath || null);
+    album = { id: result.lastInsertRowid };
+  }
+
+  return album.id;
+}
+
+app.post('/api/upload', requireAuth, upload.fields([
+    { name: 'song', maxCount: 1 },
+    { name: 'cover', maxCount: 1 }
 ]), async (req, res) => {
     const songFile = req.files?.song?.[0];
     const coverFile = req.files?.cover?.[0];
-    const { title, artist } = req.body;
+    const { title, artist, album_id, track_number } = req.body;
 
-    if (!songFile){
-        return res.status(400).json({ error: 'No file uploaded' });
+    if (!songFile) {
+        return res.status(400).json({ error: 'No song file uploaded' });
     }
 
     let cover_path = null;
+    let metadata = null;
+
+    try {
+        metadata = await mm.parseFile(songFile.path);
+    } catch (err) {
+        console.error('Metadata read failed:', err);
+    }
 
     if (coverFile) {
         cover_path = coverFile.filename;
-    } else {
-        try {
-            const metadata = await mm.parseFile(file.path);
-            const picture = metadata.common.picture?.[0];
-            if (picture) {
-                cover_path = songFile.filename.replace('.mp3', '.jpg');
-                fs.writeFileSync(`covers/${cover_path}`, picture.data);
-            }
-        } catch (err) {
-            console.error('Cover extraction failed:', err);
-        }
+    } else if (metadata?.common.picture?.[0]) {
+        cover_path = songFile.filename.replace('.mp3', '.jpg');
+        fs.writeFileSync(`covers/${cover_path}`, metadata.common.picture[0].data);
     }
 
-    const insert = db.prepare('INSERT INTO songs (title, artist, filename, cover_path) VALUES (?, ?, ?, ?)');
-    const result = insert.run(title || songFile.originalname, artist || null, songFile.filename, cover_path);
+    let validAlbumId = null;
+    if (album_id) {
+        const album = db.prepare('SELECT id FROM albums WHERE id = ?').get(album_id);
+        if (!album) return res.status(400).json({ error: 'album not found' });
+        validAlbumId = album.id;
+    } else if (metadata?.common.album) {
+        validAlbumId = resolveAlbumId(metadata.common.album, {
+            artist: metadata.common.artist || artist,
+            year: metadata.common.year || null,
+            coverPath: cover_path
+        });
+    }
 
-    res.status(201).json({ id: result.lastInsertRowid, title, artist, filename: songFile.filename });
+    const resolvedTrackNumber = track_number || metadata?.common.track?.no || null;
+
+    const insert = db.prepare(`
+        INSERT INTO songs (title, artist, filename, cover_path, album_id, track_number, uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const result = insert.run(
+        title || metadata?.common.title || songFile.originalname,
+        artist || metadata?.common.artist || null,
+        songFile.filename,
+        cover_path,
+        validAlbumId,
+        resolvedTrackNumber,
+        req.user.id
+    );
+
+    res.status(201).json({
+        id: result.lastInsertRowid,
+        title: title || metadata?.common.title,
+        artist: artist || metadata?.common.artist,
+        album_id: validAlbumId,
+        track_number: resolvedTrackNumber
+    });
 });
 
 app.get('/api/songs', (req, res) => {
-    const songs = db.prepare('SELECT * FROM songs').all();
+    const songs = db.prepare(
+        'SELECT songs.*, albums.title as album_title, albums.cover_path as album_cover FROM songs LEFT JOIN albums ON songs.album_id = albums.id').all();
     const songsWithUrls = songs.map(song => ({
         ...song,
         url: `/music/${song.filename}`,
-        cover_url: song.cover_path ? `/covers/${song.cover_path}` : null
+        cover: song.cover_path ? `/covers/${song.cover_path}` : null
     }));
     res.json(songsWithUrls);
 });
 
+app.get('/api/albums', (req, res) => {
+    const albums = db.prepare('SELECT albums.*, COUNT(songs.id) as song_count FROM albums LEFT JOIN songs ON songs.album_id = albums.id GROUP BY albums.id').all();
+
+    const albumsWithConvers = albums.map(album => ({
+        ...album,
+        cover: album.cover_path ? `covers/${album.cover_path}` : null
+    }));
+
+    res.json(albumsWithConvers);
+});
+
+app.get('/api/albums/:id', (req, res) => {
+    const album = db.prepare('SELECT * FROM albums WHERE id = ?').get(req.params.id);
+    if (!album) return res.status(400).json({ error: 'album not found'});
+
+    const songs = db.prepare('SELECT * FROM songs WHERE album_id = ? ORDER BY track_number').all(req.params.id).map(song => ({
+        ...song,
+        url: `/music/${song.filename}`,
+        cover: song.cover_path ? `/covers/${song.cover_path}` : null
+    }));
+
+    return res.json({ ...album, songs });
+});
 
 app.post('/api/songs', (req, res) => {
     const { title, artist, filename } = req.body;
@@ -258,6 +333,7 @@ app.listen(3000, '0.0.0.0', () => {
 });
 
 const Fuse = require('fuse.js');
+const { error } = require('console');
 
 app.get('/api/search', (req, res) => {
     const query = req.query.q;
