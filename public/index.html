@@ -1,16 +1,17 @@
 <!DOCTYPE html>
 <html lang="hu">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Musik</title>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Musik</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <audio id="audio-player"></audio>
-
+    
     <div id="header">
         <div class="header-left">
+            <div class="nav-indicator"></div>
             <button class="nav-item active" data-page="home-page">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
@@ -28,7 +29,7 @@
                     <path d="M20 15v-4l-3 1.5" stroke-linecap="round"/>
                 </svg>
             </button>
-            <button class="nav-item now-playing-btn" data-page="player-page">
+            <button class="now-playing-btn" data-page="player-page">
                 <div class="now-playing">
                     <img id="mini-cover" class="now-playing-cover" src="" alt="">
                     <div class="now-playing-info">
@@ -37,7 +38,6 @@
                     </div>
                 </div>
             </button>
-            <div class="nav-indicator"></div>
         </div>
 
         <div class="header-right">
@@ -237,6 +237,36 @@
                 <button id="save-song-btn" class="modal-btn confirm">Add</button>
             </div>
         </div>
+    </div>
+
+    <!-- Jobb klikk helyi menü -->
+    <div id="context-menu" class="context-menu">
+        <button class="context-menu-item" id="ctx-add-favorite">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l8.72-8.72 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+            </svg>
+            <span>Kedvencekhez adás</span>
+        </button>
+        <button class="context-menu-item" id="ctx-add-playlist">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14M5 12h14"/>
+            </svg>
+            <span>Hozzáadás lejátszási listához</span>
+        </button>
+        <button class="context-menu-item" id="ctx-play-next">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+            </svg>
+            <span>Lejátszás következőként</span>
+        </button>
+        <div class="context-menu-divider"></div>
+        <button class="context-menu-item danger" id="ctx-remove-queue">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            <span>Eltávolítás a sorból</span>
+        </button>
     </div>
 
     <div id="toast" class="toast"></div>

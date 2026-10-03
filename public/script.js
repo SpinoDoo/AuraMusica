@@ -1,43 +1,21 @@
 const API_BASE_URL = "/api";
 
-// document.addEventListener('DOMContentLoaded', () => {
-//     const isLoggedIn = localStorage.getItem('isLoggedIn');
-
-//     if (!isLoggedIn) {
-//         window.location.href = 'auth.html';
-//     }
-// });
-
+/* ==========================================================================
+   API KOMMUNIKÁCIÓ
+   ========================================================================== */
 const api = {
-    async getRecents() {
-        return this.fetchData("/songs");
-    },
-    async getAlbums() {
-        return this.fetchData("/albums");
-    },
-    async getAlbum(id) {
-        return this.fetchData(`/albums/${id}`);
-    },
-    async search(query) {
-        return this.fetchData(`/search?q=${encodeURIComponent(query)}`);
-    },
-    async getPlaylists() {
-        return this.fetchData("/playlists");
-    },
-    async createPlaylist(name) {
-        return this.fetchData("/playlists", "POST", { name });
-    },
-    async deletePlaylist(id) {
-        return this.fetchData(`/playlists/${id}`, 'DELETE');
-    },
-    async addSongToPlaylist(playlistId, songId) {
-        return this.fetchData(`/playlists/${playlistId}/songs`, 'POST', { songId });
-    },
-    async removeSongFromPlaylist(playlistId, songId) {
-        return this.fetchData(`/playlists/${playlistId}/${songId}`, 'DELETE');
-    },
-    async uploadSong(formData){
-        try{
+    async getRecents() { return this.fetchData("/songs"); },
+    async getAlbums() { return this.fetchData("/albums"); },
+    async getAlbum(id) { return this.fetchData(`/albums/${id}`); },
+    async search(query) { return this.fetchData(`/search?q=${encodeURIComponent(query)}`); },
+    async getPlaylists() { return this.fetchData("/playlists"); },
+    async createPlaylist(name) { return this.fetchData("/playlists", "POST", { name }); },
+    async deletePlaylist(id) { return this.fetchData(`/playlists/${id}`, 'DELETE'); },
+    async addSongToPlaylist(playlistId, songId) { return this.fetchData(`/playlists/${playlistId}/songs`, 'POST', { songId }); },
+    async removeSongFromPlaylist(playlistId, songId) { return this.fetchData(`/playlists/${playlistId}/${songId}`, 'DELETE'); },
+    
+    async uploadSong(formData) {
+        try {
             const token = localStorage.getItem('token');
             const headers = {};
             if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -55,6 +33,7 @@ const api = {
             return null;
         }
     },
+    
     async fetchData(endpoint, method = "GET", body = null) {
         try {
             const token = localStorage.getItem('token');
@@ -74,12 +53,22 @@ const api = {
     }
 };
 
+/* ==========================================================================
+   ÁLLAPOT & DOM ELEMEK
+   ========================================================================== */
 const state = {
     currentTrack: null,
     isPlaying: false,
     queue: [],
-    currentIndex: 0
+    originalQueue: [], 
+    currentIndex: 0,
+    isShuffle: false,
+    repeatMode: 'off'
 };
+
+let userPlaylists = [];
+let selectedContextSong = null;
+let draggedQueueIndex = null;
 
 const audio = document.getElementById("audio-player");
 const progressBar = document.getElementById("progress-bar");
@@ -88,104 +77,85 @@ const totalDurationEl = document.getElementById("total-duration");
 const playBtn = document.getElementById("btn-play");
 const playIcon = document.getElementById("play-icon");
 
-document.addEventListener("DOMContentLoaded", () => {
-    setupNavigation();
-    setupAudioListeners();
-    setupSearch();
-    loadHomePageData();
-});
-
-function navigateToPage(pageId) {
-    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
-    document.querySelectorAll(".header-left .nav-item").forEach(b => b.classList.remove("active"));
-
-    const targetPage = document.getElementById(pageId);
-    if (targetPage) targetPage.classList.add("active");
-
-    const navBtn = document.querySelector(`[data-page="${pageId}"]`);
-    if (navBtn) navBtn.classList.add("active");
+/* ==========================================================================
+   ZENE HOSSZ LERENDEZÉS ÉS UTILITY-K
+   ========================================================================== */
+function formatTime(sec) {
+    if (isNaN(sec) || sec === null || sec === undefined) return "--:--";
+    const mins = Math.floor(sec / 60);
+    const secs = Math.floor(sec % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-function setupNavigation() {
-    document.querySelectorAll("[data-page]").forEach(btn => {
-        btn.addEventListener("click", () => {
-            const targetPage = btn.getAttribute("data-page");
-            navigateToPage(targetPage);
-            if (targetPage === "playlist-page") loadPlaylistsData();
+// Segédfunkció az audio fájl tényleges hosszának lekéréséhez, ha nincs eltárolva
+function getAudioDuration(url) {
+    return new Promise((resolve) => {
+        if (!url) return resolve("--:--");
+        const tempAudio = new Audio();
+        tempAudio.src = url;
+        tempAudio.addEventListener('loadedmetadata', () => {
+            resolve(formatTime(tempAudio.duration));
+        });
+        tempAudio.addEventListener('error', () => {
+            resolve("--:--");
         });
     });
 }
 
+/* ==========================================================================
+   ALAP ZENELEJÁTSZÁSI MECHANIKÁK
+   ========================================================================== */
 function playTrack(track, queue = []) {
     state.currentTrack = track;
-    if (queue.length > 0) state.queue = queue;
+    
+    if (queue.length > 0) {
+        state.queue = [...queue];
+        state.originalQueue = [...queue];
+    }
+
+    if (state.queue.length > 0) {
+        const foundIdx = state.queue.findIndex(s => s.id === track.id || (s.title === track.title && s.artist === track.artist));
+        if (foundIdx !== -1) state.currentIndex = foundIdx;
+    }
 
     audio.src = track.url || "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
     audio.play();
     state.isPlaying = true;
 
     updatePlayerUI(track);
+    renderQueue();
+    updateLikeButtonUI();
 }
 
-function updatePlayerUI(track) {
-    document.getElementById("mini-title").innerText = track.title;
-    document.getElementById("mini-artist").innerText = track.artist;
-    document.getElementById("mini-cover").src = track.cover || "";
+function playNextTrack() {
+    if (!state.queue || state.queue.length === 0) return;
 
-    document.getElementById("player-title").innerText = track.title;
-    document.getElementById("player-artist").innerText = track.artist;
-    document.getElementById("player-album").innerText = track.album || "";
-    document.getElementById("player-cover").src = track.cover || "";
+    if (state.repeatMode === 'one') {
+        audio.currentTime = 0;
+        audio.play();
+        return;
+    }
 
-    playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
+    if (state.currentIndex < state.queue.length - 1) {
+        state.currentIndex++;
+    } else if (state.repeatMode === 'all') {
+        state.currentIndex = 0;
+    } else {
+        return;
+    }
+    
+    playTrack(state.queue[state.currentIndex]);
 }
 
-function setupAudioListeners() {
-    playBtn.addEventListener("click", () => {
-        if (!state.currentTrack) return;
-        if (state.isPlaying) {
-            audio.pause();
-            playIcon.innerHTML = `<path d="M8 5v14l11-7z"/>`;
-        } else {
-            audio.play();
-            playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
-        }
-        state.isPlaying = !state.isPlaying;
-    });
+function playPrevTrack() {
+    if (!state.queue || state.queue.length === 0) return;
 
-    audio.addEventListener("timeupdate", () => {
-        if (!audio.duration) return;
-        progressBar.max = audio.duration;
-        progressBar.value = audio.currentTime;
-        currentTimeEl.innerText = formatTime(audio.currentTime);
-        totalDurationEl.innerText = formatTime(audio.duration);
-    });
-
-    progressBar.addEventListener("input", () => {
-        audio.currentTime = progressBar.value;
-    });
-
-    document.getElementById("btn-next").addEventListener("click", () => {
-        if (state.queue.length > 0) {
-            state.currentIndex = (state.currentIndex + 1) % state.queue.length;
-            playTrack(state.queue[state.currentIndex]);
-        }
-    });
-}
-
-function setupSearch() {
-    const input = document.getElementById("search-input");
-    let timer;
-
-    input.addEventListener("input", (e) => {
-        clearTimeout(timer);
-        timer = setTimeout(async () => {
-            const query = e.target.value.trim();
-            if (!query) return;
-            const results = await api.search(query) || getMockSongs();
-            renderSongList(results, "search-results");
-        }, 300);
-    });
+    if (state.currentIndex > 0) {
+        state.currentIndex--;
+    } else {
+        state.currentIndex = state.queue.length - 1;
+    }
+    playTrack(state.queue[state.currentIndex]);
 }
 
 async function playAlbum(album) {
@@ -201,16 +171,57 @@ async function playAlbum(album) {
     showToast(`Playing "${fullAlbum.title}"`);
 }
 
-async function loadHomePageData() {
-    const recents = await api.getRecents() || getMockSongs();
-    const albums = await api.getAlbums() || getMockAlbums();
+function toggleShuffle() {
+    state.isShuffle = !state.isShuffle;
+    const shuffleBtn = document.getElementById("btn-shuffle");
+    if (shuffleBtn) shuffleBtn.classList.toggle("active", state.isShuffle);
 
-    renderGrid(recents, "recents-grid", (item) => playTrack(item, recents));
-    renderGrid(albums, "albums-grid", (album) => playAlbum(album));
+    if (state.isShuffle) {
+        if (state.queue.length > 1) {
+            const currentSong = state.queue[state.currentIndex];
+            let restSongs = state.queue.filter((_, idx) => idx !== state.currentIndex);
+            
+            for (let i = restSongs.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [restSongs[i], restSongs[j]] = [restSongs[j], restSongs[i]];
+            }
+
+            state.queue = [currentSong, ...restSongs];
+            state.currentIndex = 0;
+        }
+        showToast("Keverés bekapcsolva - Sorrend frissítve");
+    } else {
+        if (state.originalQueue.length > 0) {
+            const currentSong = state.queue[state.currentIndex];
+            state.queue = [...state.originalQueue];
+            const origIdx = state.queue.findIndex(s => s.id === currentSong.id || (s.title === currentSong.title && s.artist === currentSong.artist));
+            state.currentIndex = origIdx !== -1 ? origIdx : 0;
+        }
+        showToast("Keverés kikapcsolva");
+    }
+    renderQueue();
+}
+
+/* ==========================================================================
+   UI RENDERELES & QUEUE DRAG-AND-DROP MOZGATÁS
+   ========================================================================== */
+function updatePlayerUI(track) {
+    document.getElementById("mini-title").innerText = track.title;
+    document.getElementById("mini-artist").innerText = track.artist;
+    document.getElementById("mini-cover").src = track.cover || "";
+
+    document.getElementById("player-title").innerText = track.title;
+    document.getElementById("player-artist").innerText = track.artist;
+    document.getElementById("player-album").innerText = track.album || "";
+    document.getElementById("player-cover").src = track.cover || "";
+
+    playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
 }
 
 function renderGrid(items, containerId, onClick) {
     const container = document.getElementById(containerId);
+    if(!container) return;
+    
     container.innerHTML = items.map((item, index) => `
         <div class="card" data-index="${index}">
             <img class="card-cover" src="${item.cover || ''}" alt="">
@@ -222,6 +233,9 @@ function renderGrid(items, containerId, onClick) {
     if (onClick) {
         container.querySelectorAll(".card").forEach((card, idx) => {
             card.addEventListener("click", () => onClick(items[idx]));
+            card.addEventListener("contextmenu", (e) => {
+                if(items[idx].title) showContextMenu(e, items[idx]);
+            });
         });
     }
 }
@@ -240,10 +254,20 @@ function renderSongList(songs, containerId) {
                 </div>
             </div>
             <div class="song-item-right">
-                <span>${song.duration || '03:30'}</span>
+                <span class="song-duration" data-id="${song.id}">${song.duration || '--:--'}</span>
             </div>
         </div>
     `).join("");
+
+    // Hossz lekérése dinamikusan
+    songs.forEach(async (song) => {
+        if (!song.duration || song.duration === "00:00" || song.duration === "--:--") {
+            const dur = await getAudioDuration(song.url);
+            song.duration = dur;
+            const el = container.querySelector(`.song-duration[data-id="${song.id}"]`);
+            if (el) el.innerText = dur;
+        }
+    });
 
     container.querySelectorAll(".song-item").forEach((item, idx) => {
         item.addEventListener("click", () => {
@@ -251,51 +275,276 @@ function renderSongList(songs, containerId) {
             playTrack(songs[idx], songs);
             showToast(`Lejátszás: ${songs[idx].title}`);
         });
+        item.addEventListener("contextmenu", (e) => showContextMenu(e, songs[idx]));
     });
 }
 
-function formatTime(sec) {
-    const mins = Math.floor(sec / 60);
-    const secs = Math.floor(sec % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+/* QUEUE RENDERELES ÉS DRAG & DROP MOZGATÁS KIJELÖLÉSSEL */
+function renderQueue() {
+    const queueContainer = document.getElementById("queue-container");
+    if (!queueContainer) return;
+
+    if (!state.queue || state.queue.length === 0) {
+        queueContainer.innerHTML = '<div style="color:#aaa; text-align:center; padding:20px;">A lejátszási sor üres</div>';
+        return;
+    }
+
+    queueContainer.innerHTML = state.queue.map((song, idx) => `
+        <div class="queue-item ${idx === state.currentIndex ? 'active' : ''}" data-index="${idx}" draggable="true">
+            <div class="queue-item-left">
+                <img class="queue-cover" src="${song.cover || ''}" alt="">
+                <div class="song-details">
+                    <span class="song-name">${song.title}</span>
+                    <span class="song-artist">${song.artist}</span>
+                </div>
+            </div>
+            <div class="queue-item-right">
+                <span class="queue-duration" data-index="${idx}">${song.duration || '--:--'}</span>
+            </div>
+        </div>
+    `).join("");
+
+    // Valós időtartam dinamikus betöltése a queue elemeinek
+    state.queue.forEach(async (song, idx) => {
+        if (!song.duration || song.duration === "00:00" || song.duration === "--:--") {
+            const dur = await getAudioDuration(song.url || "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3");
+            song.duration = dur;
+            const el = queueContainer.querySelector(`.queue-duration[data-index="${idx}"]`);
+            if (el) el.innerText = dur;
+        }
+    });
+
+    const items = queueContainer.querySelectorAll(".queue-item");
+    items.forEach(item => {
+        item.addEventListener("click", () => {
+            const idx = parseInt(item.getAttribute("data-index"));
+            state.currentIndex = idx;
+            playTrack(state.queue[idx]);
+        });
+
+        item.addEventListener("contextmenu", (e) => {
+            const idx = parseInt(item.getAttribute("data-index"));
+            showContextMenu(e, state.queue[idx]);
+        });
+
+        // Drag and Drop események kijelöléssel
+        item.addEventListener("dragstart", (e) => {
+            draggedQueueIndex = parseInt(item.getAttribute("data-index"));
+            e.dataTransfer.effectAllowed = "move";
+            item.classList.add("dragging");
+        });
+
+        item.addEventListener("dragend", () => {
+            item.classList.remove("dragging");
+            clearQueueHighlights();
+            draggedQueueIndex = null;
+        });
+
+        item.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+
+            const targetIndex = parseInt(item.getAttribute("data-index"));
+            clearQueueHighlights();
+
+            // Felette és alatta lévő kártyák kijelölése
+            if (draggedQueueIndex !== null && targetIndex !== draggedQueueIndex) {
+                const rect = item.getBoundingClientRect();
+                const offset = e.clientY - rect.top;
+
+                if (offset < rect.height / 2) {
+                    item.classList.add("drag-over-above");
+                    if (targetIndex > 0) {
+                        const prevItem = queueContainer.querySelector(`[data-index="${targetIndex - 1}"]`);
+                        if (prevItem) prevItem.classList.add("drag-over-below");
+                    }
+                } else {
+                    item.classList.add("drag-over-below");
+                    if (targetIndex < state.queue.length - 1) {
+                        const nextItem = queueContainer.querySelector(`[data-index="${targetIndex + 1}"]`);
+                        if (nextItem) nextItem.classList.add("drag-over-above");
+                    }
+                }
+            }
+        });
+
+        item.addEventListener("dragleave", () => {
+            clearQueueHighlights();
+        });
+
+        item.addEventListener("drop", (e) => {
+            e.preventDefault();
+            clearQueueHighlights();
+            let targetIndex = parseInt(item.getAttribute("data-index"));
+
+            const rect = item.getBoundingClientRect();
+            const offset = e.clientY - rect.top;
+            if (offset > rect.height / 2 && targetIndex < state.queue.length - 1) {
+                targetIndex++;
+            }
+
+            if (draggedQueueIndex !== null && draggedQueueIndex !== targetIndex) {
+                moveQueueItem(draggedQueueIndex, targetIndex);
+            }
+        });
+    });
 }
 
-function showToast(msg) {
-    const toast = document.getElementById("toast");
-    toast.innerText = msg;
-    toast.classList.add("show");
-    setTimeout(() => toast.classList.remove("show"), 3000);
+function clearQueueHighlights() {
+    document.querySelectorAll(".queue-item").forEach(el => {
+        el.classList.remove("drag-over-above", "drag-over-below");
+    });
 }
 
-function getMockSongs() {
-    return [
-        { id: 1, title: "Track One", artist: "Artist A", album: "Album X", duration: "03:45" },
-        { id: 2, title: "Track Two", artist: "Artist B", album: "Album Y", duration: "02:30" }
-    ];
+function moveQueueItem(fromIndex, toIndex) {
+    const movedTrack = state.queue.splice(fromIndex, 1)[0];
+    state.queue.splice(toIndex, 0, movedTrack);
+
+    if (state.currentIndex === fromIndex) {
+        state.currentIndex = toIndex;
+    } else if (fromIndex < state.currentIndex && toIndex >= state.currentIndex) {
+        state.currentIndex--;
+    } else if (fromIndex > state.currentIndex && toIndex <= state.currentIndex) {
+        state.currentIndex++;
+    }
+
+    renderQueue();
+    showToast("Sorrend frissítve");
 }
 
-function getMockAlbums() {
-    return [
-        { id: 1, name: "Album 1", artist: "Artist A" },
-        { id: 2, name: "Album 2", artist: "Artist B" }
-    ];
+async function loadHomePageData() {
+    const recents = await api.getRecents() || getMockSongs();
+    const albums = await api.getAlbums() || getMockAlbums();
+
+    renderGrid(recents, "recents-grid", (item) => playTrack(item, recents));
+    renderGrid(albums, "albums-grid", (album) => playAlbum(album));
 }
 
 /* ==========================================================================
-   PLAYLISTS, KÉP MEGADÁS ÉS LEJÁTSZÁS FELÜLETRE LÉPÉS
+   JOBB KLIKK MENÜ (CONTEXT MENU) TELJES INTEGRÁCIÓ
    ========================================================================== */
+function setupContextMenu() {
+    const contextMenu = document.getElementById("context-menu");
+    if (!contextMenu) return;
 
-// let userPlaylists = JSON.parse(localStorage.getItem("user_playlists")) || [
-//     { id: 1, name: "Favorites", cover: "", songCount: 0, songs: [] },
-//     { id: 2, name: "Workout", cover: "", songCount: 0, songs: [] }
-// ];
+    // Kattintásra vagy görgetésre rejtse el a menüt
+    document.addEventListener("click", hideContextMenu);
+    window.addEventListener("scroll", hideContextMenu, true);
+    window.addEventListener("resize", hideContextMenu);
 
-// function savePlaylistsToStorage() {
-//     localStorage.setItem("user_playlists", JSON.stringify(userPlaylists));
-// }
+    document.getElementById("ctx-add-favorite")?.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (selectedContextSong) {
+            let favList = userPlaylists.find(p => p.name === "Favorites");
+            if (!favList) {
+                favList = await createNewPlaylist('Favorites');
+            }
+            if (favList) {
+                await api.addSongToPlaylist(favList.id, selectedContextSong.id);
+                showToast(`"${selectedContextSong.title}" hozzáadva a kedvencekhez!`);
+                await loadPlaylistsData();
+                updateLikeButtonUI();
+            }
+        }
+        hideContextMenu();
+    });
 
-let userPlaylists = [];
+    document.getElementById("ctx-add-playlist")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (selectedContextSong) {
+            state.currentTrack = selectedContextSong; 
+            openAddToPlaylistModal();
+        }
+        hideContextMenu();
+    });
 
+    document.getElementById("ctx-play-next")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (selectedContextSong) {
+        // 1. Ellenőrizzük, hogy a dal már szerepel-e a sorban
+        const existingIndex = state.queue.findIndex(s => 
+            s.id === selectedContextSong.id || 
+            (s.title === selectedContextSong.title && s.artist === selectedContextSong.artist)
+        );
+
+        // 2. Ha már a sorban van, eltávolítjuk a régi helyéről
+        if (existingIndex !== -1) {
+            // Ha a jelenleg szóló dalt próbálnánk "következőnek" tenni, nem csinálunk semmit
+            if (existingIndex === state.currentIndex) {
+                hideContextMenu();
+                return;
+            }
+
+            state.queue.splice(existingIndex, 1);
+            
+            // Ha a törölt elem az aktuális lejátszási pozíció előtt volt, kiigazítjuk az indexet
+            if (existingIndex < state.currentIndex) {
+                state.currentIndex--;
+            }
+        }
+
+        // 3. Beszúrjuk a dalt az aktuálisan szóló szám mögé
+        if (state.queue.length === 0) {
+            state.queue = [selectedContextSong];
+            state.currentIndex = 0;
+        } else {
+            const insertIndex = state.currentIndex + 1;
+            state.queue.splice(insertIndex, 0, selectedContextSong);
+        }
+
+        renderQueue();
+        showToast(`"${selectedContextSong.title}" beállítva következőnek!`);
+    }
+    hideContextMenu();
+    });
+
+    document.getElementById("ctx-remove-queue")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (selectedContextSong) {
+            const idx = state.queue.findIndex(s => s.id === selectedContextSong.id || (s.title === selectedContextSong.title && s.artist === selectedContextSong.artist));
+            if (idx !== -1) {
+                state.queue.splice(idx, 1);
+                if (idx < state.currentIndex) {
+                    state.currentIndex--;
+                }
+                renderQueue();
+                showToast(`"${selectedContextSong.title}" eltávolítva a sorból.`);
+            }
+        }
+        hideContextMenu();
+    });
+}
+
+function showContextMenu(e, song) {
+    e.preventDefault();
+    selectedContextSong = song;
+
+    const contextMenu = document.getElementById("context-menu");
+    if (!contextMenu) return;
+
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+    const menuWidth = 220;
+    const menuHeight = 160;
+    let posX = mouseX;
+    let posY = mouseY;
+
+    if (mouseX + menuWidth > window.innerWidth) posX = window.innerWidth - menuWidth - 10;
+    if (mouseY + menuHeight > window.innerHeight) posY = window.innerHeight - menuHeight - 10;
+
+    contextMenu.style.left = `${posX}px`;
+    contextMenu.style.top = `${posY}px`;
+    contextMenu.classList.add("show");
+}
+
+function hideContextMenu() {
+    const contextMenu = document.getElementById("context-menu");
+    if (contextMenu) contextMenu.classList.remove("show");
+}
+
+/* ==========================================================================
+   PLAYLIST LOGIKA
+   ========================================================================== */
 window.loadPlaylistsData = async function() {
     const container = document.getElementById("playlists-grid");
     if (!container) return;
@@ -344,21 +593,21 @@ window.loadPlaylistsData = async function() {
 
 async function createNewPlaylist(name, cover = "") {
     if (!name || !name.trim()) return;
-
     const result = await api.createPlaylist(name.trim());
     if (!result) {
         showToast('Nem sikerült létrehozni a playlistet');
-        return;
+        return null;
     }
     await loadPlaylistsData();
     showToast(`"${result.name}" lejátszási lista létrehozva`);
+    return result;
 }
 
 async function deletePlaylist(id) {
     const playlist = userPlaylists.find(p => p.id === id);
     if (!playlist) return;
 
-    const result = await deletePlaylist(playlist.id);
+    const result = await api.deletePlaylist(playlist.id);
     if (!result){
         showToast("Couldn't delete playlist");
         return;
@@ -367,152 +616,12 @@ async function deletePlaylist(id) {
     showToast(`"${playlist.name}" törölve`);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-    const createBtn = document.getElementById("create-playlist-btn");
-    const modal = document.getElementById("playlist-modal");
-    const closeModal = document.getElementById("close-modal");
-    const cancelBtn = document.getElementById("cancel-playlist-btn");
-    const saveBtn = document.getElementById("save-playlist-btn");
-    const nameInput = document.getElementById("playlist-name-input");
-    const coverInput = document.getElementById("playlist-cover-input");
-
-    if (createBtn && modal) {
-        createBtn.addEventListener("click", () => {
-            modal.classList.add("active");
-            if (nameInput) nameInput.value = "";
-            if (coverInput) coverInput.value = "";
-            if (nameInput) nameInput.focus();
-        });
-    }
-
-    const hideModal = () => {
-        if (modal) modal.classList.remove("active");
-    };
-
-    if (closeModal) closeModal.addEventListener("click", hideModal);
-    if (cancelBtn) cancelBtn.addEventListener("click", hideModal);
-
-    const submitPlaylistForm = () => {
-        if (nameInput && nameInput.value.trim()) {
-            const coverVal = coverInput ? coverInput.value : "";
-            createNewPlaylist(nameInput.value, coverVal);
-            hideModal();
-        }
-    };
-
-    if (saveBtn) saveBtn.addEventListener("click", submitPlaylistForm);
-
-    if (nameInput) {
-        nameInput.addEventListener("keyup", (e) => {
-            if (e.key === "Enter") submitPlaylistForm();
-        });
-    }
-    if (coverInput) {
-        coverInput.addEventListener("keyup", (e) => {
-            if (e.key === "Enter") submitPlaylistForm();
-        });
-    }
-
-    const volumeBar = document.getElementById("volume-bar");
-    const volumeBtn = document.getElementById("btn-volume-icon");
-    const audioEl = document.getElementById("audio-player");
-    let lastVolume = 1;
-
-    if (volumeBar && audioEl) {
-        audioEl.volume = volumeBar.value;
-
-        volumeBar.addEventListener("input", (e) => {
-            const val = parseFloat(e.target.value);
-            audioEl.volume = val;
-            updateVolumeIcon(val);
-        });
-    }
-
-    if (volumeBtn && volumeBar && audioEl) {
-        volumeBtn.addEventListener("click", () => {
-            if (audioEl.volume > 0) {
-                lastVolume = audioEl.volume;
-                audioEl.volume = 0;
-                volumeBar.value = 0;
-            } else {
-                audioEl.volume = lastVolume || 1;
-                volumeBar.value = audioEl.volume;
-            }
-            updateVolumeIcon(audioEl.volume);
-        });
-    }
-
-    function updateVolumeIcon(vol) {
-        const icon = document.getElementById("volume-icon");
-        if (!icon) return;
-        if (vol === 0) {
-            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>`;
-        } else if (vol < 0.5) {
-            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>`;
-        } else {
-            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>`;
-        }
-    }
-});
-
-/* ==========================================================================
-   KEDVENCEK, LEJÁTSZÁSI SOR, KEVERÉS, ISMÉTLÉS, LISTÁHOZ ADÁS
-   ========================================================================== */
-
-state.isShuffle = false;
-state.repeatMode = 'off';
-
-const _basePlayTrack = playTrack;
-window.playTrack = function(track, queue = []) {
-    _basePlayTrack(track, queue);
-    if (state.queue.length > 0) {
-        const foundIdx = state.queue.findIndex(s => s.id === track.id || (s.title === track.title && s.artist === track.artist));
-        if (foundIdx !== -1) state.currentIndex = foundIdx;
-    }
-    renderQueue();
-    updateLikeButtonUI();
-};
-
-function renderQueue() {
-    const queueContainer = document.getElementById("queue-container");
-    if (!queueContainer) return;
-
-    if (!state.queue || state.queue.length === 0) {
-        queueContainer.innerHTML = '<div style="color:#aaa; text-align:center; padding:20px;">A lejátszási sor üres</div>';
-        return;
-    }
-
-    queueContainer.innerHTML = state.queue.map((song, idx) => `
-        <div class="queue-item ${idx === state.currentIndex ? 'active' : ''}" data-index="${idx}">
-            <div class="queue-item-left">
-                <img class="queue-cover" src="${song.cover || ''}" alt="">
-                <div class="song-details">
-                    <span class="song-name">${song.title}</span>
-                    <span class="song-artist">${song.artist}</span>
-                </div>
-            </div>
-            <div class="queue-item-right">
-                <span>${song.duration || '00:00'}</span>
-            </div>
-        </div>
-    `).join("");
-
-    queueContainer.querySelectorAll(".queue-item").forEach(item => {
-        item.addEventListener("click", () => {
-            const idx = parseInt(item.getAttribute("data-index"));
-            state.currentIndex = idx;
-            playTrack(state.queue[idx]);
-        });
-    });
-}
-
 function updateLikeButtonUI() {
     const likeBtn = document.getElementById("btn-like");
     if (!likeBtn || !state.currentTrack) return;
 
     const favList = userPlaylists.find(p => p.name === "Favorites");
     const isLiked = favList && favList.songs && favList.songs.some(s => s.id === state.currentTrack.id);
-
     likeBtn.classList.toggle("liked", isLiked);
 }
 
@@ -523,7 +632,6 @@ async function toggleLikeCurrentTrack() {
     if (!favList) {
         favList = await createNewPlaylist('Favorites');
         if (!favList) return;
-        userPlaylists.unshift(favList);
     }
     
     const isLiked = favList.songs && favList.songs.some(s => s.id === state.currentTrack.id);
@@ -538,40 +646,6 @@ async function toggleLikeCurrentTrack() {
 
     await loadPlaylistsData();
     updateLikeButtonUI();
-}
-
-function playNextTrack() {
-    if (!state.queue || state.queue.length === 0) return;
-
-    if (state.repeatMode === 'one') {
-        audio.currentTime = 0;
-        audio.play();
-        return;
-    }
-
-    if (state.isShuffle) {
-        state.currentIndex = Math.floor(Math.random() * state.queue.length);
-    } else {
-        if (state.currentIndex < state.queue.length - 1) {
-            state.currentIndex++;
-        } else if (state.repeatMode === 'all') {
-            state.currentIndex = 0;
-        } else {
-            return;
-        }
-    }
-    playTrack(state.queue[state.currentIndex]);
-}
-
-function playPrevTrack() {
-    if (!state.queue || state.queue.length === 0) return;
-
-    if (state.currentIndex > 0) {
-        state.currentIndex--;
-    } else {
-        state.currentIndex = state.queue.length - 1;
-    }
-    playTrack(state.queue[state.currentIndex]);
 }
 
 function openAddToPlaylistModal() {
@@ -601,7 +675,6 @@ function openAddToPlaylistModal() {
                 showToast(`Song added to ${targetPlaylist.name}`);
                 await loadPlaylistsData();
             }
-            
             modal.classList.remove("active");
         });
     });
@@ -609,21 +682,177 @@ function openAddToPlaylistModal() {
     modal.classList.add("active");
 }
 
+/* ==========================================================================
+   NAVIGÁCIÓ ÉS EGYÉB UTILITYK
+   ========================================================================== */
+function updateIndicator(targetElement) {
+    const indicator = document.querySelector('.nav-indicator');
+    const parent = document.querySelector('.header-left');
+    if (!indicator || !targetElement || !parent) return;
+
+    const targetRect = targetElement.getBoundingClientRect();
+    const parentRect = parent.getBoundingClientRect();
+
+    // Relatív pozíció és szélesség kiszámítása a szülőhöz képest
+    const left = targetRect.left - parentRect.left;
+    const width = targetRect.width;
+
+    indicator.style.width = `${width}px`;
+    indicator.style.transform = `translateX(${left}px)`;
+    indicator.style.opacity = '1';
+}
+
+function navigateToPage(pageId) {
+    // Oldalak aktív állapotának törlése
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    
+    // Cél oldal aktiválása
+    const targetPage = document.getElementById(pageId);
+    if (targetPage) targetPage.classList.add("active");
+
+    if (pageId === "player-page") {
+        // Ha a lejátszó oldalra navigálunk:
+        // 1. Megtartjuk / visszaállítjuk az utoljára kiválasztott főmenüpont aktív jelölését
+        document.querySelectorAll(".header-left .nav-item").forEach(b => {
+            b.classList.toggle("active", b.getAttribute("data-page") === activeNavTab);
+        });
+
+        // 2. Az indikátort az utoljára aktív főmenüpont alá csúsztatjuk
+        const activeNavBtn = document.querySelector(`.header-left [data-page="${activeNavTab}"]`);
+        if (activeNavBtn) {
+            updateIndicator(activeNavBtn);
+        }
+    } else {
+        activeNavTab = pageId;
+
+        document.querySelectorAll(".header-left .nav-item").forEach(b => {
+            b.classList.toggle("active", b.getAttribute("data-page") === pageId);
+        });
+
+        const navBtn = document.querySelector(`.header-left [data-page="${pageId}"]`);
+        if (navBtn) {
+            updateIndicator(navBtn);
+        }
+    }
+}
+
+function showToast(msg) {
+    const toast = document.getElementById("toast");
+    if(!toast) return;
+    toast.innerText = msg;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 3000);
+}
+
+function getMockSongs() {
+    return [
+        { id: 1, title: "Track One", artist: "Artist A", album: "Album X", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", cover: "https://picsum.photos/seed/1/200" },
+        { id: 2, title: "Track Two", artist: "Artist B", album: "Album Y", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", cover: "https://picsum.photos/seed/2/200" },
+        { id: 3, title: "Track Three", artist: "Artist C", album: "Album Z", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3", cover: "https://picsum.photos/seed/3/200" },
+        { id: 4, title: "Track Four", artist: "Artist D", album: "Album W", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3", cover: "https://picsum.photos/seed/4/200" }
+    ];
+}
+
+function getMockAlbums() {
+    return [
+        { id: 1, name: "Album 1", artist: "Artist A" },
+        { id: 2, name: "Album 2", artist: "Artist B" }
+    ];
+}
+
+function toggleAccountMenu(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('account-menu');
+    if (menu) menu.classList.toggle('show');
+    
+    const username = localStorage.getItem('username') || 'Vendég';
+    const displayEl = document.getElementById('user-display-name');
+    if (displayEl) displayEl.textContent = username;
+}
+
+function navigateToAuth() { window.location.href = 'auth.html'; }
+function handleLogout() {
+    localStorage.removeItem('username');
+    localStorage.removeItem('token');
+    alert('Sikeresen kijelentkeztél!');
+    window.location.reload();
+}
+
+/* ==========================================================================
+   INICIALIZÁLÁS (DOMCONTENTLOADED)
+   ========================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
-    const likeBtn = document.getElementById("btn-like");
-    if (likeBtn) {
-        likeBtn.addEventListener("click", toggleLikeCurrentTrack);
+    loadHomePageData();
+    setupContextMenu();
+
+    document.querySelectorAll("[data-page]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const targetPage = btn.getAttribute("data-page");
+            navigateToPage(targetPage);
+            if (targetPage === "playlist-page") loadPlaylistsData();
+        });
+    });
+
+    const navItems = document.querySelectorAll('.header-left .nav-item');
+
+    
+
+    const initialActive = document.querySelector('.header-left .nav-item.active');
+    if (initialActive) {
+        requestAnimationFrame(() => updateIndicator(initialActive));
     }
 
-    const shuffleBtn = document.getElementById("btn-shuffle");
-    if (shuffleBtn) {
-        shuffleBtn.addEventListener("click", () => {
-            state.isShuffle = !state.isShuffle;
-            shuffleBtn.classList.toggle("active", state.isShuffle);
-            showToast(state.isShuffle ? "Keverés bekapcsolva" : "Keverés kikapcsolva");
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            navItems.forEach(nav => nav.classList.remove('active'));
+            const current = e.currentTarget;
+            current.classList.add('active');
+            updateIndicator(current);
+        });
+    });
+    
+    // Ablak átméretezésekor is tartsa a pontos pozíciót
+    window.addEventListener('resize', () => {
+        const activeNav = document.querySelector('.header-left .nav-item.active');
+        if (activeNav) updateIndicator(activeNav);
+    });
+
+    if (playBtn) {
+        playBtn.addEventListener("click", () => {
+            if (!state.currentTrack) return;
+            if (state.isPlaying) {
+                audio.pause();
+                playIcon.innerHTML = `<path d="M8 5v14l11-7z"/>`;
+            } else {
+                audio.play();
+                playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
+            }
+            state.isPlaying = !state.isPlaying;
         });
     }
 
+    if (audio) {
+        audio.addEventListener("timeupdate", () => {
+            if (!audio.duration) return;
+            progressBar.max = audio.duration;
+            progressBar.value = audio.currentTime;
+            currentTimeEl.innerText = formatTime(audio.currentTime);
+            totalDurationEl.innerText = formatTime(audio.duration);
+        });
+        audio.addEventListener("ended", playNextTrack);
+    }
+
+    if (progressBar) {
+        progressBar.addEventListener("input", () => {
+            audio.currentTime = progressBar.value;
+        });
+    }
+
+    document.getElementById("btn-next")?.addEventListener("click", playNextTrack);
+    document.getElementById("btn-prev")?.addEventListener("click", playPrevTrack);
+    document.getElementById("btn-like")?.addEventListener("click", toggleLikeCurrentTrack);
+    document.getElementById("btn-shuffle")?.addEventListener("click", toggleShuffle);
+    
     const repeatBtn = document.getElementById("btn-repeat");
     if (repeatBtn) {
         repeatBtn.addEventListener("click", () => {
@@ -643,164 +872,109 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    const nextBtn = document.getElementById("btn-next");
-    if (nextBtn) {
-        nextBtn.onclick = playNextTrack;
-    }
-
-    const prevBtn = document.getElementById("btn-prev");
-    if (prevBtn) {
-        prevBtn.onclick = playPrevTrack;
-    }
-
-    if (audio) {
-        audio.addEventListener("ended", playNextTrack);
-    }
-
-    const addPlaylistTrackBtn = document.getElementById("btn-add-to-playlist");
-    if (addPlaylistTrackBtn) {
-        addPlaylistTrackBtn.addEventListener("click", openAddToPlaylistModal);
-    }
-
-    const closeAddModalBtn = document.getElementById("close-add-modal");
-    if (closeAddModalBtn) {
-        closeAddModalBtn.addEventListener("click", () => {
-            document.getElementById("add-to-playlist-modal").classList.remove("active");
+    const searchInput = document.getElementById("search-input");
+    if (searchInput) {
+        let timer;
+        searchInput.addEventListener("input", (e) => {
+            clearTimeout(timer);
+            timer = setTimeout(async () => {
+                const query = e.target.value.trim();
+                if (!query) return;
+                const results = await api.search(query) || getMockSongs();
+                renderSongList(results, "search-results");
+            }, 300);
         });
     }
-});
 
+    const volumeBar = document.getElementById("volume-bar");
+    const volumeBtn = document.getElementById("btn-volume-icon");
+    let lastVolume = 1;
 
-window.testPlaylist = function(count = 50) {
-    const mockSongs = Array.from({ length: count }, (_, i) => {
-        const songIndex = (i % 16) + 1;
-        return {
-            id: `test-song-${i + 1}`,
-            title: `Teszt Zene #${i + 1}`,
-            artist: `Teszt Előadó ${(i % 5) + 1}`,
-            album: `Album ${(i % 3) + 1}`,
-            duration: `03:${(10 + (i % 50)).toString().padStart(2, '0')}`,
-            cover: `https://picsum.photos/seed/${i + 100}/200`,
-            url: `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${songIndex}.mp3`
-        };
+    function updateVolumeIcon(vol) {
+        const icon = document.getElementById("volume-icon");
+        if (!icon) return;
+        if (vol === 0) {
+            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>`;
+        } else {
+            icon.innerHTML = `<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>`;
+        }
+    }
+
+    if (volumeBar && audio) {
+        audio.volume = volumeBar.value;
+        volumeBar.addEventListener("input", (e) => {
+            const val = parseFloat(e.target.value);
+            audio.volume = val;
+            updateVolumeIcon(val);
+        });
+    }
+
+    if (volumeBtn && volumeBar && audio) {
+        volumeBtn.addEventListener("click", () => {
+            if (audio.volume > 0) {
+                lastVolume = audio.volume;
+                audio.volume = 0;
+                volumeBar.value = 0;
+            } else {
+                audio.volume = lastVolume || 1;
+                volumeBar.value = audio.volume;
+            }
+            updateVolumeIcon(audio.volume);
+        });
+    }
+
+    document.getElementById("btn-add-to-playlist")?.addEventListener("click", openAddToPlaylistModal);
+    document.getElementById("close-add-modal")?.addEventListener("click", () => {
+        document.getElementById("add-to-playlist-modal").classList.remove("active");
     });
 
-    let testPlaylist = userPlaylists.find(p => p.name === "Sok Zenés Teszt");
-    if (!testPlaylist) {
-        testPlaylist = {
-            id: Date.now(),
-            name: "Sok Zenés Teszt",
-            cover: "https://picsum.photos/seed/testlist/300",
-            songCount: count,
-            songs: mockSongs
-        };
-        userPlaylists.unshift(testPlaylist);
-    } else {
-        testPlaylist.songs = mockSongs;
-        testPlaylist.songCount = count;
-    }
+    const playlistModal = document.getElementById("playlist-modal");
+    document.getElementById("create-playlist-btn")?.addEventListener("click", () => {
+        if (playlistModal) {
+            playlistModal.classList.add("active");
+            const nameInp = document.getElementById("playlist-name-input");
+            if (nameInp) { nameInp.value = ""; nameInp.focus(); }
+            const coverInp = document.getElementById("playlist-cover-input");
+            if (coverInp) coverInp.value = "";
+        }
+    });
 
-    savePlaylistsToStorage();
-    if (typeof loadPlaylistsData === "function") {
-        loadPlaylistsData();
-    }
-    showToast(`${count} db teszt zene sikeresen generálva!`);
-};
+    const hidePlaylistModal = () => playlistModal?.classList.remove("active");
+    document.getElementById("close-modal")?.addEventListener("click", hidePlaylistModal);
+    document.getElementById("cancel-playlist-btn")?.addEventListener("click", hidePlaylistModal);
+    document.getElementById("save-playlist-btn")?.addEventListener("click", () => {
+        const nameInput = document.getElementById("playlist-name-input");
+        const coverInput = document.getElementById("playlist-cover-input");
+        if (nameInput && nameInput.value.trim()) {
+            createNewPlaylist(nameInput.value, coverInput ? coverInput.value : "");
+            hidePlaylistModal();
+        }
+    });
 
-function toggleAccountMenu(event) {
-    event.stopPropagation();
-    const menu = document.getElementById('account-menu');
-    menu.classList.toggle('show');
+    const songModal = document.getElementById("add-song-modal");
+    const hideSongModal = () => songModal?.classList.remove("active");
     
-    const username = localStorage.getItem('username') || 'Vendég';
-    document.getElementById('user-display-name').textContent = username;
-}
-
-window.addEventListener('click', () => {
-    const menu = document.getElementById('account-menu');
-    if (menu && menu.classList.contains('show')) {
-        menu.classList.remove('show');
-    }
-});
-
-function navigateToAuth() {
-    window.location.href = 'auth.html';
-}
-
-function handleLogout() {
-    localStorage.removeItem('username');
-    localStorage.removeItem('token');
-    alert('Sikeresen kijelentkeztél!');
-    window.location.reload();
-}
-
-// Indicator for the menupoints
-document.addEventListener('DOMContentLoaded', () => {
-    const navItems = document.querySelectorAll('.header-left .nav-item');
-    const indicator = document.querySelector('.nav-indicator');
-
-    function updateIndicator(targetElement) {
-        if (!targetElement || !indicator) return;
-
-        indicator.style.left = `${targetElement.offsetLeft}px`;
-        indicator.style.width = `${targetElement.offsetWidth}px`;
-    }
-
-    const initialActive = document.querySelector('.header-left .nav-item.active');
-    if (initialActive) {
-        setTimeout(() => updateIndicator(initialActive), 50);
-    }
-
-    navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-            navItems.forEach(nav => nav.classList.remove('active'));
-            const currentButton = e.currentTarget;
-            currentButton.classList.add('active');
-
-            updateIndicator(currentButton);
-        });
-    });
-
-    window.addEventListener('resize', () => {
-        const activeItem = document.querySelector('.header-left .nav-item.active');
-        updateIndicator(activeItem);
-    });
-});
-
-//Add song mechanic
-document.addEventListener("DOMContentLoaded", () => {
-    const addMusicBtn = document.getElementById("add-music-btn");
-    const modal = document.getElementById("add-song-modal");
-    const closeModal = document.getElementById("close-add-song-modal");
-    const cancelBtn = document.getElementById("cancel-add-song-btn");
-    const saveBtn = document.getElementById("save-song-btn");
-
-    const openModal = () => {
-        if (modal) {
-            modal.classList.add("active");
+    document.getElementById("add-music-btn")?.addEventListener("click", () => {
+        if (songModal) {
+            songModal.classList.add("active");
             document.getElementById("song-title-input").value = "";
             document.getElementById("song-artist-input").value = "";
             document.getElementById("song-file-input").value = "";
             document.getElementById("song-cover-file-input").value = "";
         }
-    };
-
-    const closeModalWindow = () => {
-        if (modal) modal.classList.remove("active");
-    };
-
-    if (addMusicBtn) addMusicBtn.addEventListener("click", openModal);
-    if (closeModal) closeModal.addEventListener("click", closeModalWindow);
-    if (cancelBtn) cancelBtn.addEventListener("click", closeModalWindow);
-    if (saveBtn) saveBtn.addEventListener("click", async () => {
-        const title     = document.getElementById("song-title-input").value.trim();
-        const artist    = document.getElementById("song-artist-input").value.trim();
-        const songFile  = document.getElementById("song-file-input").files[0];
+    });
+    
+    document.getElementById("close-add-song-modal")?.addEventListener("click", hideSongModal);
+    document.getElementById("cancel-add-song-btn")?.addEventListener("click", hideSongModal);
+    document.getElementById("save-song-btn")?.addEventListener("click", async () => {
+        const title = document.getElementById("song-title-input").value.trim();
+        const artist = document.getElementById("song-artist-input").value.trim();
+        const songFile = document.getElementById("song-file-input").files[0];
         const coverFile = document.getElementById("song-cover-file-input").files[0];
 
         if (!songFile) {
             showToast('Choose an mp3 file!');
-            return;         
+            return;        
         }
 
         const formData = new FormData();
@@ -815,9 +989,15 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        showToast(`"${result.title} || ${title}" uploaded successfully`);
-        closeModalWindow();
+        showToast(`"${result.title || title}" uploaded successfully`);
+        hideSongModal();
+        loadHomePageData();
+    });
 
-        if (typeof loadHomePageData === 'function') loadHomePageData();
+    window.addEventListener('click', () => {
+        const accMenu = document.getElementById('account-menu');
+        if (accMenu && accMenu.classList.contains('show')) {
+            accMenu.classList.remove('show');
+        }
     });
 });

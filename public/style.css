@@ -113,20 +113,28 @@ body {
     gap: 20px;
 }
 
-/* Navigációs indikátor csík */
 .header-left {
-    position: relative; /* Biztosítja, hogy az indikátor ehhez a konténerhez képest pozicionáljon */
+    position: relative; /* Ez elengedhetetlen a pontos transzformációhoz */
+    display: flex;
+    align-items: center;
+    gap: 20px;
 }
 
+/* Navigációs indikátor csík */
 .nav-indicator {
     position: absolute;
-    bottom: -4px; /* A gombok alja alatt helyezkedik el */
+    bottom: 0;
+    left: 0;
     height: 3px;
     background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
     border-radius: 3px;
     box-shadow: 0 0 10px var(--accent-glow);
-    transition: left var(--transition-normal), width var(--transition-normal);
-    pointer-events: none; /* Ne zavarja a kattintásokat */
+    pointer-events: none;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    opacity: 0; /* Kezdetben rejtve, amíg meg nem határozzuk a pozíciót */
 }
 
 .nav-item {
@@ -322,6 +330,98 @@ body {
 
 .page {
     display: none;
+}
+/* ==========================================================================
+   CONTEXT MENU (JOBB KLIKK MENÜ UI)
+   ========================================================================== */
+.context-menu {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    background-color: rgba(21, 29, 48, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color-hover);
+    border-radius: 16px;
+    padding: 6px;
+    width: 230px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 15px var(--accent-glow);
+    flex-direction: column;
+    gap: 3px;
+    transform-origin: top left;
+}
+
+.context-menu.show {
+    display: flex;
+    animation: contextMenuPop 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+}
+
+@keyframes contextMenuPop {
+    from {
+        opacity: 0;
+        transform: scale(0.92) translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.context-menu-item {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    padding: 10px 12px;
+    text-align: left;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.context-menu-item svg {
+    flex-shrink: 0;
+    transition: transform var(--transition-fast);
+}
+
+.context-menu-item:hover {
+    background-color: var(--bg-element-hover);
+    color: var(--accent-primary);
+}
+
+.context-menu-item:hover svg {
+    transform: scale(1.1);
+}
+
+.context-menu-item:active {
+    transform: scale(0.97);
+}
+
+.context-menu-item.danger {
+    color: #fda4af;
+}
+
+.context-menu-item.danger:hover {
+    background-color: rgba(244, 63, 94, 0.15);
+    color: var(--danger);
+}
+
+.context-menu-divider {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 4px 0;
+}
+
+.queue-item.drag-over-above {
+    border-top: 2px solid #1db954;
+}
+.queue-item.drag-over-below {
+    border-bottom: 2px solid #1db954;
 }
 
 @keyframes pageFadeIn {
