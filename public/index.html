@@ -11,25 +11,24 @@
     
     <div id="header">
         <div class="header-left">
-            <div class="nav-indicator"></div>
-            <button class="nav-item active" data-page="home-page">
+            <button class="nav-item active" data-page="home-page" aria-label="Kezdőlap" aria-current="page">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
                 </svg>
             </button>
-            <button class="nav-item" data-page="search-page">
+            <button class="nav-item" data-page="search-page" aria-label="Keresés">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <circle cx="11" cy="11" r="7"/>
                     <path d="M21 21l-4.35-4.35"/>
                 </svg>
             </button>
-            <button class="nav-item" data-page="playlist-page">
+            <button class="nav-item" data-page="playlist-page" aria-label="Lejátszási listák">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M4 6h16M4 12h10M4 18h16" stroke-linecap="round"/>
                     <path d="M20 15v-4l-3 1.5" stroke-linecap="round"/>
                 </svg>
             </button>
-            <button class="now-playing-btn" data-page="player-page">
+            <button class="now-playing-btn" data-page="player-page" aria-label="Jelenlegi lejátszás" hidden>
                 <div class="now-playing">
                     <img id="mini-cover" class="now-playing-cover" src="" alt="">
                     <div class="now-playing-info">
@@ -48,6 +47,11 @@
                             <circle cx="18" cy="16" r="3"/>
                         </svg>
                     </button>
+            <button class="nav-item" data-page="settings-page" aria-label="Beállítások" title="Beállítások">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--bg-header)"/><circle cx="15" cy="17" r="3" fill="var(--bg-header)"/>
+                </svg>
+            </button>
      
                 <div class="account-dropdown-container">
             <button class="nav-item" id="btn-account" onclick="toggleAccountMenu(event)">
@@ -119,6 +123,25 @@
                 </button>
             </div>
             <div class="playlist-grid" id="playlists-grid"></div>
+        </div>
+
+        <div id="settings-page" class="page">
+            <h2 class="section-title">Beállítások</h2>
+            <p class="settings-description">Alakítsd a saját ízlésedre. A változások azonnal láthatók, és ebben a böngészőben megmaradnak.</p>
+            <form id="design-settings" class="settings-panel">
+                <fieldset>
+                    <legend>Színek</legend>
+                    <div id="theme-colors" class="settings-grid"></div>
+                </fieldset>
+                <fieldset class="settings-grid">
+                    <legend>Megjelenés</legend>
+                    <label>Lekerekítés <select name="corners"><option value="0px">Szögletes</option><option value="12px">Enyhén kerek</option><option value="20px">Kerek</option></select></label>
+                    <label>Térközök <select name="spacing"><option value="compact">Kompakt</option><option value="comfortable">Kényelmes</option></select></label>
+                    <label class="settings-toggle"><input type="checkbox" name="animations"> Animációk engedélyezése</label>
+                </fieldset>
+                <button type="button" id="reset-design" class="modal-btn cancel">Alapértelmezések visszaállítása</button>
+                <p id="settings-status" role="status" aria-live="polite"></p>
+            </form>
         </div>
 
         <div id="player-page" class="page">

@@ -206,6 +206,8 @@ function toggleShuffle() {
    UI RENDERELES & QUEUE DRAG-AND-DROP MOZGATÁS
    ========================================================================== */
 function updatePlayerUI(track) {
+    document.dispatchEvent(new CustomEvent('trackchange', { detail: track }));
+    document.querySelector('.now-playing-btn').hidden = false;
     document.getElementById("mini-title").innerText = track.title;
     document.getElementById("mini-artist").innerText = track.artist;
     document.getElementById("mini-cover").src = track.cover || "";
@@ -290,9 +292,10 @@ function renderQueue() {
     }
 
     queueContainer.innerHTML = state.queue.map((song, idx) => `
-        <div class="queue-item ${idx === state.currentIndex ? 'active' : ''}" data-index="${idx}" draggable="true">
+        <div class="queue-item ${idx === state.currentIndex ? 'active' : ''}" data-index="${idx}" draggable="true" tabindex="0">
             <div class="queue-item-left">
-                <img class="queue-cover" src="${song.cover || ''}" alt="">
+                <span class="queue-grip" aria-hidden="true">⠿</span>
+                <img class="queue-cover" src="${song.cover || ''}" alt="" draggable="false">
                 <div class="song-details">
                     <span class="song-name">${song.title}</span>
                     <span class="song-artist">${song.artist}</span>
@@ -316,6 +319,14 @@ function renderQueue() {
 
     const items = queueContainer.querySelectorAll(".queue-item");
     items.forEach(item => {
+        item.addEventListener('keydown', event => {
+            if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+            event.preventDefault();
+            const from = Number(item.dataset.index);
+            const to = Math.max(0, Math.min(state.queue.length - 1, from + (event.key === 'ArrowUp' ? -1 : 1)));
+            moveQueueItem(from, to);
+            queueContainer.querySelector(`[data-index="${to}"]`)?.focus();
+        });
         item.addEventListener("click", () => {
             const idx = parseInt(item.getAttribute("data-index"));
             state.currentIndex = idx;
@@ -331,12 +342,15 @@ function renderQueue() {
         item.addEventListener("dragstart", (e) => {
             draggedQueueIndex = parseInt(item.getAttribute("data-index"));
             e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData('text/plain', String(draggedQueueIndex));
             item.classList.add("dragging");
+            queueContainer.classList.add('is-dragging');
         });
 
         item.addEventListener("dragend", () => {
             item.classList.remove("dragging");
             clearQueueHighlights();
+            queueContainer.classList.remove('is-dragging');
             draggedQueueIndex = null;
         });
 
@@ -354,22 +368,14 @@ function renderQueue() {
 
                 if (offset < rect.height / 2) {
                     item.classList.add("drag-over-above");
-                    if (targetIndex > 0) {
-                        const prevItem = queueContainer.querySelector(`[data-index="${targetIndex - 1}"]`);
-                        if (prevItem) prevItem.classList.add("drag-over-below");
-                    }
                 } else {
                     item.classList.add("drag-over-below");
-                    if (targetIndex < state.queue.length - 1) {
-                        const nextItem = queueContainer.querySelector(`[data-index="${targetIndex + 1}"]`);
-                        if (nextItem) nextItem.classList.add("drag-over-above");
-                    }
                 }
             }
         });
 
-        item.addEventListener("dragleave", () => {
-            clearQueueHighlights();
+        item.addEventListener("dragleave", (e) => {
+            if (!item.contains(e.relatedTarget)) clearQueueHighlights();
         });
 
         item.addEventListener("drop", (e) => {
@@ -379,13 +385,14 @@ function renderQueue() {
 
             const rect = item.getBoundingClientRect();
             const offset = e.clientY - rect.top;
-            if (offset > rect.height / 2 && targetIndex < state.queue.length - 1) {
-                targetIndex++;
-            }
+            targetIndex = queueDropIndex(draggedQueueIndex, targetIndex, offset > rect.height / 2);
 
             if (draggedQueueIndex !== null && draggedQueueIndex !== targetIndex) {
                 moveQueueItem(draggedQueueIndex, targetIndex);
             }
+            draggedQueueIndex = null;
+            queueContainer.classList.remove('is-dragging');
+            item.classList.remove('dragging');
         });
     });
 }
@@ -396,7 +403,19 @@ function clearQueueHighlights() {
     });
 }
 
+function queueDropIndex(fromIndex, targetIndex, after) {
+    const insertionIndex = targetIndex + (after ? 1 : 0);
+    return insertionIndex - (fromIndex < insertionIndex ? 1 : 0);
+}
+
 function moveQueueItem(fromIndex, toIndex) {
+    if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)
+        || fromIndex < 0 || toIndex < 0 || fromIndex >= state.queue.length
+        || toIndex >= state.queue.length || fromIndex === toIndex) return;
+    const previousRows = [...document.querySelectorAll('.queue-item')];
+    const previousTops = previousRows.map(row => row.getBoundingClientRect().top);
+    const order = previousRows.map((_, index) => index);
+    order.splice(toIndex, 0, order.splice(fromIndex, 1)[0]);
     const movedTrack = state.queue.splice(fromIndex, 1)[0];
     state.queue.splice(toIndex, 0, movedTrack);
 
@@ -409,6 +428,16 @@ function moveQueueItem(fromIndex, toIndex) {
     }
 
     renderQueue();
+    const rows = document.querySelectorAll('.queue-item');
+    if (designAnimationsEnabled()) {
+        rows.forEach((row, index) => {
+            const distance = previousTops[order[index]] - row.getBoundingClientRect().top;
+            row.animate([{ transform: `translateY(${distance}px)` }, { transform: 'translateY(0)' }], {
+                duration: 320, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)'
+            });
+        });
+    }
+    rows[toIndex]?.classList.add('queue-moved');
     showToast("Sorrend frissítve");
 }
 
@@ -685,55 +714,16 @@ function openAddToPlaylistModal() {
 /* ==========================================================================
    NAVIGÁCIÓ ÉS EGYÉB UTILITYK
    ========================================================================== */
-function updateIndicator(targetElement) {
-    const indicator = document.querySelector('.nav-indicator');
-    const parent = document.querySelector('.header-left');
-    if (!indicator || !targetElement || !parent) return;
-
-    const targetRect = targetElement.getBoundingClientRect();
-    const parentRect = parent.getBoundingClientRect();
-
-    // Relatív pozíció és szélesség kiszámítása a szülőhöz képest
-    const left = targetRect.left - parentRect.left;
-    const width = targetRect.width;
-
-    indicator.style.width = `${width}px`;
-    indicator.style.transform = `translateX(${left}px)`;
-    indicator.style.opacity = '1';
-}
-
 function navigateToPage(pageId) {
-    // Oldalak aktív állapotának törlése
-    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
-    
-    // Cél oldal aktiválása
     const targetPage = document.getElementById(pageId);
-    if (targetPage) targetPage.classList.add("active");
-
-    if (pageId === "player-page") {
-        // Ha a lejátszó oldalra navigálunk:
-        // 1. Megtartjuk / visszaállítjuk az utoljára kiválasztott főmenüpont aktív jelölését
-        document.querySelectorAll(".header-left .nav-item").forEach(b => {
-            b.classList.toggle("active", b.getAttribute("data-page") === activeNavTab);
-        });
-
-        // 2. Az indikátort az utoljára aktív főmenüpont alá csúsztatjuk
-        const activeNavBtn = document.querySelector(`.header-left [data-page="${activeNavTab}"]`);
-        if (activeNavBtn) {
-            updateIndicator(activeNavBtn);
-        }
-    } else {
-        activeNavTab = pageId;
-
-        document.querySelectorAll(".header-left .nav-item").forEach(b => {
-            b.classList.toggle("active", b.getAttribute("data-page") === pageId);
-        });
-
-        const navBtn = document.querySelector(`.header-left [data-page="${pageId}"]`);
-        if (navBtn) {
-            updateIndicator(navBtn);
-        }
-    }
+    if (!targetPage) return;
+    document.querySelectorAll('.page').forEach(page => page.classList.toggle('active', page === targetPage));
+    document.querySelectorAll('#header [data-page]').forEach(button => {
+        const active = button.dataset.page === pageId;
+        button.classList.toggle('active', active);
+        if (active) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
+    });
 }
 
 function showToast(msg) {
@@ -781,6 +771,167 @@ function handleLogout() {
 /* ==========================================================================
    INICIALIZÁLÁS (DOMCONTENTLOADED)
    ========================================================================== */
+function designAnimationsEnabled() {
+    return document.documentElement.dataset.animations !== 'off'
+        && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function validateDesign(saved, defaults) {
+    const result = { ...defaults };
+    if (!saved || typeof saved !== 'object') return result;
+    for (const key of Object.keys(defaults)) {
+        const value = saved[key];
+        if (key.startsWith('--') ? /^#[\da-f]{6}$/i.test(value)
+            : key === 'corners' ? ['0px', '12px', '20px'].includes(value)
+            : key === 'spacing' ? ['compact', 'comfortable'].includes(value)
+            : key === 'colorMode' ? ['manual', 'cover', 'song'].includes(value)
+            : key === 'visualizer' ? ['off', 'glow', 'bars'].includes(value)
+            : typeof value === 'boolean') result[key] = value;
+    }
+    return result;
+}
+
+function trackHue(track) {
+    let hue = 0;
+    for (const character of `${track.artist || ''}|${track.title || ''}`) hue = (hue * 31 + character.codePointAt(0)) % 360;
+    return hue;
+}
+
+function coverHue(pixels, fallback) {
+    let red = 0, green = 0, blue = 0, weight = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+        const saturation = (Math.max(r, g, b) - Math.min(r, g, b)) * pixels[i + 3] / 255;
+        red += r * saturation; green += g * saturation; blue += b * saturation; weight += saturation;
+    }
+    if (!weight) return fallback;
+    const r = red / weight, g = green / weight, b = blue / weight;
+    const max = Math.max(r, g, b), delta = max - Math.min(r, g, b);
+    if (delta < 10) return fallback;
+    const hue = max === r ? (g - b) / delta : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+    return (hue * 60 + 360) % 360;
+}
+
+function setupDesignSettings() {
+    const form = document.getElementById('design-settings');
+    const colorContainer = document.getElementById('theme-colors');
+    if (!form || !colorContainer) return;
+    const colors = {
+        '--bg-main': 'Oldal háttere', '--bg-header': 'Fejléc',
+        '--bg-card': 'Kártyák', '--bg-card-hover': 'Kártyák kiemelése',
+        '--bg-element': 'Elemek háttere', '--bg-element-hover': 'Elemek kiemelése',
+        '--accent-primary': 'Fő kiemelőszín', '--accent-primary-hover': 'Gombok kiemelése',
+        '--accent-secondary': 'Másodlagos kiemelőszín', '--text-primary': 'Fő szöveg',
+        '--text-secondary': 'Másodlagos szöveg', '--text-muted': 'Halvány szöveg',
+        '--slider-track-bg': 'Csúszkák háttere', '--danger': 'Kedvencek és törlés',
+        '--danger-hover': 'Törlés kiemelése', '--text-on-accent': 'Szöveg a kiemelőszínen'
+    };
+    const root = document.documentElement;
+    const styles = getComputedStyle(root);
+    const defaults = { corners: '20px', spacing: 'comfortable', animations: true, colorMode: 'manual', visualizer: 'glow' };
+    for (const key of Object.keys(colors)) defaults[key] = styles.getPropertyValue(key).trim();
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem('musik-design')); } catch { /* Az alapértékekkel is használható. */ }
+    let design = validateDesign(saved, defaults);
+    const status = document.getElementById('settings-status');
+    const advancedContainer = document.getElementById('theme-colors-advanced');
+    const primaryColors = ['--bg-main', '--bg-card', '--accent-primary', '--text-primary'];
+    for (const [container, advanced] of [['theme-colors', false], ['theme-colors-advanced', true]]) {
+        const target = document.getElementById(container);
+        if (!target) continue;
+        target.innerHTML = Object.entries(colors)
+            .filter(([key]) => !advancedContainer || primaryColors.includes(key) !== advanced)
+            .map(([key, label]) => `<label>${label}<input type="color" name="${key}" aria-label="${label}"></label>`).join('');
+    }
+    let selectedTrack = null;
+    let colorRequest = 0;
+    const musicStatus = document.getElementById('music-design-status');
+    function setMusicStatus(message) {
+        if (musicStatus) musicStatus.textContent = message;
+    }
+    function applyMusicPalette(hue) {
+        const palette = {
+            '--accent-primary': `hsl(${hue} 85% 68%)`, '--accent-secondary': `hsl(${(hue + 40) % 360} 80% 60%)`,
+            '--accent-primary-hover': `hsl(${hue} 70% 45%)`, '--bg-main': `hsl(${hue} 35% 7%)`,
+            '--bg-header': `hsl(${hue} 32% 10%)`, '--bg-card': `hsl(${hue} 30% 13%)`,
+            '--bg-card-hover': `hsl(${hue} 30% 19%)`, '--bg-element': `hsl(${hue} 30% 10%)`,
+            '--bg-element-hover': `hsl(${hue} 30% 18%)`, '--slider-track-bg': `hsl(${hue} 25% 22%)`,
+            '--text-primary': '#f0f9ff', '--text-secondary': '#b6c2d2', '--text-muted': '#94a3b8', '--text-on-accent': '#0b0f17'
+        };
+        for (const [key, value] of Object.entries(palette)) root.style.setProperty(key, value);
+    }
+    function updateMusicColors() {
+        const request = ++colorRequest;
+        for (const key of Object.keys(colors)) root.style.setProperty(key, design[key]);
+        if (!selectedTrack || design.colorMode === 'manual') {
+            setMusicStatus(selectedTrack ? 'A saját színpalettád aktív.' : 'Válassz egy dalt a zenei megjelenéshez.');
+            return;
+        }
+        const fallback = trackHue(selectedTrack);
+        applyMusicPalette(fallback);
+        setMusicStatus(design.colorMode === 'cover'
+            ? 'Borító nélkül vagy nem olvasható borítónál a dalonkénti paletta érvényes.'
+            : 'A dal címéhez és előadójához tartozó paletta aktív.');
+        if (design.colorMode !== 'cover' || !selectedTrack.cover) return;
+        const cover = new Image();
+        cover.crossOrigin = 'anonymous';
+        cover.onload = () => {
+            if (request !== colorRequest) return;
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 24;
+                const context = canvas.getContext('2d', { willReadFrequently: true });
+                context.drawImage(cover, 0, 0, 24, 24);
+                applyMusicPalette(coverHue(context.getImageData(0, 0, 24, 24).data, fallback));
+                setMusicStatus('A borítóhoz illő színpaletta aktív.');
+            } catch { /* Külső képnél a böngésző tilthatja a színolvasást; a dalpaletta marad. */ }
+        };
+        cover.onerror = () => {}; // A dalpaletta már aktív, a lejátszást nem érinti a képhiba.
+        cover.src = selectedTrack.cover;
+    }
+    document.addEventListener('trackchange', event => {
+        selectedTrack = event.detail;
+        updateMusicColors();
+    });
+    audio.addEventListener('playing', () => { root.dataset.musicPlaying = 'true'; });
+    for (const event of ['pause', 'ended', 'waiting', 'emptied', 'error']) {
+        audio.addEventListener(event, () => { root.dataset.musicPlaying = 'false'; });
+    }
+    function applyDesign() {
+        root.style.setProperty('--surface-radius', design.corners);
+        root.dataset.spacing = design.spacing;
+        root.dataset.animations = design.animations ? 'on' : 'off';
+        root.dataset.visualizer = design.visualizer;
+        for (const [key, value] of Object.entries(design)) {
+            const input = form.elements.namedItem(key);
+            if (!input) continue;
+            if (input.type === 'checkbox') input.checked = value;
+            else input.value = value;
+        }
+        updateMusicColors();
+    }
+    form.addEventListener('submit', event => event.preventDefault());
+    form.addEventListener('input', event => {
+        const input = event.target;
+        if (!Object.hasOwn(defaults, input.name)) return;
+        design = validateDesign({ ...design, [input.name]: input.type === 'checkbox' ? input.checked : input.value }, defaults);
+        applyDesign();
+        try {
+            localStorage.setItem('musik-design', JSON.stringify(design));
+            if (status) status.textContent = 'Beállítások mentve.';
+        } catch { if (status) status.textContent = 'A megjelenés frissült, de a böngésző nem engedi a mentést.'; }
+    });
+    document.getElementById('reset-design')?.addEventListener('click', () => {
+        design = { ...defaults };
+        applyDesign();
+        try {
+            localStorage.removeItem('musik-design');
+            if (status) status.textContent = 'Alapértelmezések visszaállítva.';
+        } catch { if (status) status.textContent = 'Az alapértékek visszaálltak, de a mentés nem törölhető.'; }
+    });
+    applyDesign();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     loadHomePageData();
     setupContextMenu();
@@ -791,30 +942,6 @@ document.addEventListener("DOMContentLoaded", () => {
             navigateToPage(targetPage);
             if (targetPage === "playlist-page") loadPlaylistsData();
         });
-    });
-
-    const navItems = document.querySelectorAll('.header-left .nav-item');
-
-    
-
-    const initialActive = document.querySelector('.header-left .nav-item.active');
-    if (initialActive) {
-        requestAnimationFrame(() => updateIndicator(initialActive));
-    }
-
-    navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-            navItems.forEach(nav => nav.classList.remove('active'));
-            const current = e.currentTarget;
-            current.classList.add('active');
-            updateIndicator(current);
-        });
-    });
-    
-    // Ablak átméretezésekor is tartsa a pontos pozíciót
-    window.addEventListener('resize', () => {
-        const activeNav = document.querySelector('.header-left .nav-item.active');
-        if (activeNav) updateIndicator(activeNav);
     });
 
     if (playBtn) {
@@ -888,7 +1015,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const volumeBar = document.getElementById("volume-bar");
     const volumeBtn = document.getElementById("btn-volume-icon");
-    let lastVolume = 1;
+    let lastVolume = 0.5;
 
     function updateVolumeIcon(vol) {
         const icon = document.getElementById("volume-icon");
@@ -901,7 +1028,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (volumeBar && audio) {
-        audio.volume = volumeBar.value;
+        audio.volume = 0.5;
+        volumeBar.value = audio.volume;
         volumeBar.addEventListener("input", (e) => {
             const val = parseFloat(e.target.value);
             audio.volume = val;
@@ -916,7 +1044,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 audio.volume = 0;
                 volumeBar.value = 0;
             } else {
-                audio.volume = lastVolume || 1;
+                audio.volume = lastVolume || 0.5;
                 volumeBar.value = audio.volume;
             }
             updateVolumeIcon(audio.volume);
@@ -1000,4 +1128,5 @@ document.addEventListener("DOMContentLoaded", () => {
             accMenu.classList.remove('show');
         }
     });
+    setupDesignSettings();
 });
