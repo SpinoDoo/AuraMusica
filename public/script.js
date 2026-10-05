@@ -468,9 +468,20 @@ function setupContextMenu() {
             if (!favList) {
                 favList = await createNewPlaylist('Favorites');
             }
+
             if (favList) {
-                await api.addSongToPlaylist(favList.id, selectedContextSong.id);
-                showToast(`"${selectedContextSong.title}" hozzáadva a kedvencekhez!`);
+                const isLiked = favList.songs && favList.songs.some(s => s.id === selectedContextSong.id);
+
+                if (isLiked) {
+                    // Eltávolítás a kedvencek közül
+                    await api.removeSongFromPlaylist(favList.id, selectedContextSong.id);
+                    showToast(`"${selectedContextSong.title}" eltávolítva a kedvencek közül!`);
+                } else {
+                    // Hozzáadás a kedvencekhez
+                    await api.addSongToPlaylist(favList.id, selectedContextSong.id);
+                    showToast(`"${selectedContextSong.title}" hozzáadva a kedvencekhez!`);
+                }
+
                 await loadPlaylistsData();
                 updateLikeButtonUI();
             }
@@ -488,43 +499,36 @@ function setupContextMenu() {
     });
 
     document.getElementById("ctx-play-next")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (selectedContextSong) {
-        // 1. Ellenőrizzük, hogy a dal már szerepel-e a sorban
-        const existingIndex = state.queue.findIndex(s => 
-            s.id === selectedContextSong.id || 
-            (s.title === selectedContextSong.title && s.artist === selectedContextSong.artist)
-        );
+        e.stopPropagation();
+        if (selectedContextSong) {
+            const existingIndex = state.queue.findIndex(s => 
+                s.id === selectedContextSong.id || 
+                (s.title === selectedContextSong.title && s.artist === selectedContextSong.artist)
+            );
 
-        // 2. Ha már a sorban van, eltávolítjuk a régi helyéről
-        if (existingIndex !== -1) {
-            // Ha a jelenleg szóló dalt próbálnánk "következőnek" tenni, nem csinálunk semmit
-            if (existingIndex === state.currentIndex) {
-                hideContextMenu();
-                return;
+            if (existingIndex !== -1) {
+                if (existingIndex === state.currentIndex) {
+                    hideContextMenu();
+                    return;
+                }
+                state.queue.splice(existingIndex, 1);
+                if (existingIndex < state.currentIndex) {
+                    state.currentIndex--;
+                }
             }
 
-            state.queue.splice(existingIndex, 1);
-            
-            // Ha a törölt elem az aktuális lejátszási pozíció előtt volt, kiigazítjuk az indexet
-            if (existingIndex < state.currentIndex) {
-                state.currentIndex--;
+            if (state.queue.length === 0) {
+                state.queue = [selectedContextSong];
+                state.currentIndex = 0;
+            } else {
+                const insertIndex = state.currentIndex + 1;
+                state.queue.splice(insertIndex, 0, selectedContextSong);
             }
-        }
 
-        // 3. Beszúrjuk a dalt az aktuálisan szóló szám mögé
-        if (state.queue.length === 0) {
-            state.queue = [selectedContextSong];
-            state.currentIndex = 0;
-        } else {
-            const insertIndex = state.currentIndex + 1;
-            state.queue.splice(insertIndex, 0, selectedContextSong);
+            renderQueue();
+            showToast(`"${selectedContextSong.title}" beállítva következőnek!`);
         }
-
-        renderQueue();
-        showToast(`"${selectedContextSong.title}" beállítva következőnek!`);
-    }
-    hideContextMenu();
+        hideContextMenu();
     });
 
     document.getElementById("ctx-remove-queue")?.addEventListener("click", (e) => {
@@ -551,6 +555,31 @@ function showContextMenu(e, song) {
     const contextMenu = document.getElementById("context-menu");
     if (!contextMenu) return;
 
+    const favBtn = document.getElementById("ctx-add-favorite");
+    if (favBtn) {
+        const favList = userPlaylists.find(p => p.name === "Favorites");
+        const isLiked = favList && favList.songs && favList.songs.some(s => s.id === song.id);
+        const labelSpan = favBtn.querySelector("span");
+
+        if (labelSpan) {
+            labelSpan.innerText = isLiked ? "Eltávolítás a kedvencek közül" : "Kedvencekhez adás";
+        }
+    }
+
+    const removeQueueBtn = document.getElementById("ctx-remove-queue");
+    if (removeQueueBtn) {
+        const isInQueue = state.queue.some(s => 
+            s.id === song.id || (s.title === song.title && s.artist === song.artist)
+        );
+
+        if (isInQueue) {
+            removeQueueBtn.style.display = "flex";
+        } else {
+            removeQueueBtn.style.display = "none";
+        }
+    }
+
+    // 3. Pozicionálás a képernyőn
     const mouseX = e.clientX;
     const mouseY = e.clientY;
     const menuWidth = 220;

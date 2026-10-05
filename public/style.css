@@ -1429,6 +1429,8 @@ input[type=range]::-moz-range-thumb {
         font-size: 11px;
     }
 }
+
+
 /* Navigáció, sorátrendezés és személyre szabás */
 [hidden] { display: none !important; }
 #header [data-page].active::after {
