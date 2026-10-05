@@ -12,7 +12,7 @@ const api = {
     async createPlaylist(name) { return this.fetchData("/playlists", "POST", { name }); },
     async deletePlaylist(id) { return this.fetchData(`/playlists/${id}`, 'DELETE'); },
     async addSongToPlaylist(playlistId, songId) { return this.fetchData(`/playlists/${playlistId}/songs`, 'POST', { songId }); },
-    async removeSongFromPlaylist(playlistId, songId) { return this.fetchData(`/playlists/${playlistId}/${songId}`, 'DELETE'); },
+    async removeSongFromPlaylist(playlistId, songId) { return this.fetchData(`/playlists/${playlistId}/songs/${songId}`, 'DELETE'); },
     
     async uploadSong(formData) {
         try {
