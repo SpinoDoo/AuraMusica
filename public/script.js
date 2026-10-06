@@ -63,7 +63,13 @@ const state = {
     originalQueue: [], 
     currentIndex: 0,
     isShuffle: false,
-    repeatMode: 'off'
+    repeatMode: 'off',
+    lyrics: [],
+    activeLyricIndex: -1,
+    crossfadeMs: 2500,
+    isTransitioning: false,
+    normalizeAudio: true,
+    mobileQueueSwipe: true
 };
 
 let userPlaylists = [];
@@ -105,7 +111,34 @@ function getAudioDuration(url) {
 /* ==========================================================================
    ALAP ZENELEJÁTSZÁSI MECHANIKÁK
    ========================================================================== */
-function playTrack(track, queue = []) {
+function setTrackSource(track) {
+    const src = track.url || "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
+    audio.crossOrigin = isSameOrigin(src) ? 'anonymous' : null;
+    audio.src = src;
+}
+
+function fadeAudioVolume(from, to, duration = state.crossfadeMs) {
+    return new Promise(resolve => {
+        const start = performance.now();
+        const tick = now => {
+            const ratio = Math.min(1, (now - start) / duration);
+            audio.volume = from + (to - from) * ratio;
+            if (ratio < 1) requestAnimationFrame(tick);
+            else resolve();
+        };
+        requestAnimationFrame(tick);
+    });
+}
+
+async function playTrack(track, queue = [], options = {}) {
+    const requestedVolume = parseFloat(document.getElementById("volume-bar")?.value ?? audio.volume ?? 0.5);
+    const shouldFade = options.crossfade !== false && state.currentTrack && state.isPlaying && !state.isTransitioning;
+    state.isTransitioning = true;
+
+    if (shouldFade) {
+        await fadeAudioVolume(audio.volume, 0, state.crossfadeMs * 0.45);
+    }
+
     state.currentTrack = track;
     
     if (queue.length > 0) {
@@ -118,13 +151,18 @@ function playTrack(track, queue = []) {
         if (foundIdx !== -1) state.currentIndex = foundIdx;
     }
 
-    audio.src = track.url || "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
-    audio.play();
+    setTrackSource(track);
+    audio.volume = shouldFade ? 0 : requestedVolume;
+    audio.play()?.catch(err => { if (err.name !== 'AbortError') showToast('A lejátszás nem indult el'); });
     state.isPlaying = true;
 
     updatePlayerUI(track);
     renderQueue();
     updateLikeButtonUI();
+    loadLyricsForTrack(track);
+
+    if (shouldFade) await fadeAudioVolume(0, requestedVolume, state.crossfadeMs * 0.55);
+    state.isTransitioning = false;
 }
 
 function playNextTrack() {
@@ -149,6 +187,7 @@ function playNextTrack() {
 
 function playPrevTrack() {
     if (!state.queue || state.queue.length === 0) return;
+    if (audio.currentTime > 3) { audio.currentTime = 0; return; }
 
     if (state.currentIndex > 0) {
         state.currentIndex--;
@@ -331,6 +370,7 @@ function renderQueue() {
             const idx = parseInt(item.getAttribute("data-index"));
             state.currentIndex = idx;
             playTrack(state.queue[idx]);
+            document.dispatchEvent(new CustomEvent('mobile-queue-close'));
         });
 
         item.addEventListener("contextmenu", (e) => {
@@ -763,6 +803,103 @@ function showToast(msg) {
     setTimeout(() => toast.classList.remove("show"), 3000);
 }
 
+function parseLrc(text) {
+    const lines = [];
+    const timePattern = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+    for (const rawLine of String(text || '').split(/\r?\n/)) {
+        const lyric = rawLine.replace(timePattern, '').trim();
+        const stamps = [...rawLine.matchAll(timePattern)];
+        for (const stamp of stamps) {
+            const minutes = Number(stamp[1]);
+            const seconds = Number(stamp[2]);
+            const fraction = stamp[3] ? Number(stamp[3].padEnd(3, '0').slice(0, 3)) / 1000 : 0;
+            if (Number.isFinite(minutes) && Number.isFinite(seconds)) {
+                lines.push({ time: minutes * 60 + seconds + fraction, text: lyric || '...' });
+            }
+        }
+    }
+    return lines.sort((a, b) => a.time - b.time);
+}
+
+function renderLyrics() {
+    const container = document.getElementById('lyrics-container');
+    const status = document.getElementById('lyrics-status');
+    if (!container) return;
+    state.activeLyricIndex = -1;
+    if (!state.lyrics.length) {
+        container.innerHTML = '<div class="lyrics-empty">Ehhez a dalhoz még nincs LRC dalszöveg.</div>';
+        if (status) status.textContent = 'Nincs betöltött dalszöveg';
+        return;
+    }
+    container.innerHTML = state.lyrics.map((line, index) => `
+        <div class="lyric-line" data-index="${index}" data-time="${line.time}">
+            ${line.text}
+        </div>
+    `).join('');
+    if (status) status.textContent = `${state.lyrics.length} sor szinkronizálva`;
+    syncLyrics();
+}
+
+function syncLyrics() {
+    if (!state.lyrics.length) return;
+    const current = audio.currentTime || 0;
+    let activeIndex = state.lyrics.findIndex((line, index) => {
+        const next = state.lyrics[index + 1];
+        return current >= line.time && (!next || current < next.time);
+    });
+    if (activeIndex < 0 && current >= state.lyrics[state.lyrics.length - 1].time) activeIndex = state.lyrics.length - 1;
+    if (activeIndex === state.activeLyricIndex) return;
+
+    const container = document.getElementById('lyrics-container');
+    if (!container) return;
+    container.querySelector('.lyric-line.active')?.classList.remove('active');
+    const activeLine = container.querySelector(`.lyric-line[data-index="${activeIndex}"]`);
+    if (activeLine) {
+        activeLine.classList.add('active');
+        activeLine.scrollIntoView({ block: 'center', behavior: designAnimationsEnabled() ? 'smooth' : 'auto' });
+    }
+    state.activeLyricIndex = activeIndex;
+}
+
+function loadLyricsForTrack(track) {
+    const rawLyrics = track?.lrc || track?.lyrics || track?.syncedLyrics || '';
+    state.lyrics = parseLrc(rawLyrics);
+    renderLyrics();
+}
+
+function setupLyricsTools() {
+    document.querySelectorAll('[data-player-panel]').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetId = tab.dataset.playerPanel;
+            document.querySelectorAll('[data-player-panel]').forEach(item => {
+                const active = item === tab;
+                item.classList.toggle('active', active);
+                item.setAttribute('aria-selected', String(active));
+            });
+            document.querySelectorAll('.player-panel').forEach(panel => {
+                const active = panel.id === targetId;
+                panel.classList.toggle('active', active);
+                panel.hidden = !active;
+            });
+            if (targetId === 'lyrics-panel') syncLyrics();
+        });
+    });
+
+    document.getElementById('lyrics-file-input')?.addEventListener('change', event => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            const lrc = String(reader.result || '');
+            if (state.currentTrack) state.currentTrack.lrc = lrc;
+            state.lyrics = parseLrc(lrc);
+            renderLyrics();
+            showToast(state.lyrics.length ? 'Dalszöveg betöltve' : 'Nem találtam időbélyeges LRC sorokat');
+        };
+        reader.readAsText(file);
+    });
+}
+
 function getMockSongs() {
     return [
         { id: 1, title: "Track One", artist: "Artist A", album: "Album X", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", cover: "https://picsum.photos/seed/1/200" },
@@ -994,6 +1131,7 @@ document.addEventListener("DOMContentLoaded", () => {
             progressBar.value = audio.currentTime;
             currentTimeEl.innerText = formatTime(audio.currentTime);
             totalDurationEl.innerText = formatTime(audio.duration);
+            syncLyrics();
         });
         audio.addEventListener("ended", playNextTrack);
     }
@@ -1035,7 +1173,7 @@ document.addEventListener("DOMContentLoaded", () => {
             clearTimeout(timer);
             timer = setTimeout(async () => {
                 const query = e.target.value.trim();
-                if (!query) return;
+                if (!query) { document.getElementById("search-results").innerHTML = ""; return; }
                 const results = await api.search(query) || getMockSongs();
                 renderSongList(results, "search-results");
             }, 300);
@@ -1118,6 +1256,7 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("song-artist-input").value = "";
             document.getElementById("song-file-input").value = "";
             document.getElementById("song-cover-file-input").value = "";
+            document.getElementById("song-lyrics-file-input").value = "";
         }
     });
     
@@ -1128,6 +1267,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const artist = document.getElementById("song-artist-input").value.trim();
         const songFile = document.getElementById("song-file-input").files[0];
         const coverFile = document.getElementById("song-cover-file-input").files[0];
+        const lyricsFile = document.getElementById("song-lyrics-file-input").files[0];
 
         if (!songFile) {
             showToast('Choose an mp3 file!');
@@ -1137,6 +1277,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const formData = new FormData();
         formData.append('song', songFile);
         if (coverFile) formData.append('cover', coverFile);
+        if (lyricsFile) formData.append('lyrics', lyricsFile);
         formData.append('title', title);
         formData.append('artist', artist);
 
@@ -1158,4 +1299,424 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
     setupDesignSettings();
+    setupLyricsTools();
+});
+
+/* ==========================================================================
+   KIEGÉSZÍTÉSEK: szinkron, Media Session, gyorsbillentyűk, mentés,
+   alvás időzítő, vizualizáló, korábbi keresések
+   ========================================================================== */
+const SESSION_KEY = 'musik-session';
+const RECENT_KEY = 'musik-recent-searches';
+const AUDIO_SETTINGS_KEY = 'musik-audio-settings';
+const PAUSE_PATH = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+const PLAY_PATH = '<path d="M8 5v14l11-7z"/>';
+
+function isSameOrigin(url) {
+    try { return new URL(url, location.href).origin === location.origin; } catch { return false; }
+}
+function setPlayIcon(playing) { playIcon.innerHTML = playing ? PAUSE_PATH : PLAY_PATH; }
+
+function renderRecentSearches() {
+    const box = document.getElementById('recent-searches');
+    if (!box) return;
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { /* üres lista */ }
+    box.replaceChildren(...list.map(q => {
+        const tag = document.createElement('button');
+        tag.type = 'button'; tag.className = 'tag'; tag.textContent = q;
+        tag.addEventListener('click', () => {
+            const input = document.getElementById('search-input');
+            input.value = q; input.dispatchEvent(new Event('input'));
+        });
+        return tag;
+    }));
+}
+function rememberSearch(query) {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { /* üres lista */ }
+    list = [query, ...list.filter(q => q !== query)].slice(0, 8);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* nem mentjük */ }
+    renderRecentSearches();
+}
+
+function setupPlaybackSync() {
+    audio.addEventListener('play', () => { state.isPlaying = true; setPlayIcon(true); });
+    audio.addEventListener('pause', () => { state.isPlaying = false; setPlayIcon(false); });
+    const search = document.getElementById('search-input');
+    search?.addEventListener('change', () => { if (search.value.trim()) rememberSearch(search.value.trim()); });
+}
+
+function setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    document.addEventListener('trackchange', e => {
+        const t = e.detail;
+        ms.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: t.album || '',
+            artwork: t.cover ? [{ src: t.cover }] : [] });
+    });
+    const handlers = {
+        play: () => audio.play(), pause: () => audio.pause(),
+        previoustrack: playPrevTrack, nexttrack: playNextTrack,
+        seekto: d => { audio.currentTime = d.seekTime; }
+    };
+    for (const [action, fn] of Object.entries(handlers)) {
+        try { ms.setActionHandler(action, fn); } catch { /* nem támogatott művelet */ }
+    }
+}
+
+function setupShortcuts() {
+    const volumeBar = document.getElementById('volume-bar');
+    const setVolume = v => {
+        volumeBar.value = Math.min(1, Math.max(0, v));
+        volumeBar.dispatchEvent(new Event('input'));
+    };
+    document.addEventListener('keydown', e => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+        const key = e.key.toLowerCase();
+        if (key === '?' || (e.key === '/' && e.shiftKey)) {
+            openShortcutsModal();
+            e.preventDefault();
+            return;
+        }
+        const actions = {
+            ' ': () => { if (!e.target.closest('button')) playBtn.click(); else return false; },
+            arrowright: () => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5); },
+            arrowleft: () => { audio.currentTime = Math.max(0, audio.currentTime - 5); },
+            arrowup: () => setVolume(audio.volume + 0.05),
+            arrowdown: () => setVolume(audio.volume - 0.05),
+            n: playNextTrack, p: playPrevTrack,
+            m: () => document.getElementById('btn-volume-icon').click(),
+            s: toggleShuffle, r: () => document.getElementById('btn-repeat').click(),
+            l: toggleLikeCurrentTrack
+        };
+        if (actions[key] && actions[key]() !== false) e.preventDefault();
+    });
+}
+
+function openShortcutsModal() {
+    document.getElementById('shortcuts-modal')?.classList.add('active');
+}
+
+function setupShortcutsModal() {
+    const modal = document.getElementById('shortcuts-modal');
+    document.getElementById('btn-shortcuts-help')?.addEventListener('click', openShortcutsModal);
+    document.getElementById('close-shortcuts-modal')?.addEventListener('click', () => modal?.classList.remove('active'));
+    modal?.addEventListener('click', event => {
+        if (event.target === modal) modal.classList.remove('active');
+    });
+}
+
+function loadAudioSettings() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(AUDIO_SETTINGS_KEY)) || {}; } catch { /* alapértékek */ }
+    state.crossfadeMs = Number.isFinite(saved.crossfadeMs) ? Math.max(0, Math.min(8000, saved.crossfadeMs)) : state.crossfadeMs;
+    state.normalizeAudio = typeof saved.normalizeAudio === 'boolean' ? saved.normalizeAudio : true;
+    state.mobileQueueSwipe = typeof saved.mobileQueueSwipe === 'boolean' ? saved.mobileQueueSwipe : true;
+}
+
+function saveAudioSettings() {
+    try {
+        localStorage.setItem(AUDIO_SETTINGS_KEY, JSON.stringify({
+            crossfadeMs: state.crossfadeMs,
+            normalizeAudio: state.normalizeAudio,
+            mobileQueueSwipe: state.mobileQueueSwipe
+        }));
+    } catch { /* a lejátszás ettől még működik */ }
+}
+
+function setupAudioSettings() {
+    loadAudioSettings();
+    const crossfade = document.getElementById('crossfade-setting');
+    const crossfadeValue = document.getElementById('crossfade-value');
+    const normalization = document.getElementById('normalization-setting');
+    const mobileSwipe = document.getElementById('mobile-queue-swipe-setting');
+    const render = () => {
+        if (crossfade) crossfade.value = String(state.crossfadeMs / 1000);
+        if (crossfadeValue) crossfadeValue.textContent = `${(state.crossfadeMs / 1000).toFixed(1).replace('.0', '')} mp`;
+        if (normalization) normalization.checked = state.normalizeAudio;
+        if (mobileSwipe) mobileSwipe.checked = state.mobileQueueSwipe;
+    };
+    crossfade?.addEventListener('input', event => {
+        state.crossfadeMs = Math.round(Number(event.target.value) * 1000);
+        render();
+        saveAudioSettings();
+    });
+    normalization?.addEventListener('change', event => {
+        state.normalizeAudio = event.target.checked;
+        saveAudioSettings();
+        document.dispatchEvent(new CustomEvent('audio-settings-change'));
+        showToast(state.normalizeAudio ? 'Hangerő-normalizálás bekapcsolva' : 'Hangerő-normalizálás kikapcsolva');
+    });
+    mobileSwipe?.addEventListener('change', event => {
+        state.mobileQueueSwipe = event.target.checked;
+        saveAudioSettings();
+    });
+    render();
+}
+
+function setupMobileQueueSheet() {
+    const sheet = document.querySelector('.player-right');
+    const toggle = document.getElementById('mobile-queue-toggle');
+    if (!sheet) return;
+    const backdrop = document.createElement('button');
+    backdrop.type = 'button';
+    backdrop.className = 'mobile-queue-backdrop';
+    backdrop.setAttribute('aria-label', 'Queue bezárása');
+    sheet.parentElement?.insertBefore(backdrop, sheet);
+    const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
+    const closeSheet = () => {
+        sheet?.classList.remove('queue-sheet-open');
+        document.body.classList.remove('mobile-queue-open');
+        toggle?.setAttribute('aria-expanded', 'false');
+        toggle?.querySelector('span')?.replaceChildren(document.createTextNode('Song queue'));
+    };
+    const openSheet = () => {
+        if (!sheet || !isMobile()) return;
+        sheet.classList.add('queue-sheet-open');
+        document.body.classList.add('mobile-queue-open');
+        toggle?.setAttribute('aria-expanded', 'true');
+        toggle?.querySelector('span')?.replaceChildren(document.createTextNode('Lejátszó'));
+        requestAnimationFrame(() => {
+            const queuePanel = document.getElementById('queue-panel');
+            const queueList = document.getElementById('queue-container');
+            queuePanel?.setAttribute('tabindex', '-1');
+            queuePanel?.focus({ preventScroll: true });
+            queueList?.scrollTo({ top: 0 });
+        });
+    };
+    const toggleSheet = () => {
+        if (!sheet || !isMobile()) return;
+        if (sheet.classList.contains('queue-sheet-open')) closeSheet();
+        else openSheet();
+    };
+    toggle?.setAttribute('aria-expanded', 'false');
+    toggle?.setAttribute('aria-controls', 'queue-panel');
+    toggle?.addEventListener('click', toggleSheet);
+    backdrop.addEventListener('click', closeSheet);
+    window.addEventListener('resize', () => { if (!isMobile()) closeSheet(); });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeSheet();
+    });
+
+    let startY = 0, currentY = 0, dragging = false;
+    const canStartSheetDrag = event => {
+        if (!state.mobileQueueSwipe || !isMobile() || !sheet.classList.contains('queue-sheet-open')) return false;
+        if (event.target.closest('button, input, select, textarea, .queue-item')) return false;
+        const scroller = event.target.closest('.queue-list, .lyrics-list');
+        return !scroller || scroller.scrollTop <= 0;
+    };
+    sheet.addEventListener('pointerdown', event => {
+        if (!canStartSheetDrag(event)) return;
+        dragging = true;
+        startY = event.clientY;
+        currentY = event.clientY;
+        sheet.setPointerCapture?.(event.pointerId);
+        sheet.classList.add('queue-sheet-dragging');
+    });
+    sheet.addEventListener('pointermove', event => {
+        if (!dragging) return;
+        currentY = event.clientY;
+        const offset = Math.max(0, currentY - startY);
+        if (offset > 8) event.preventDefault();
+        sheet.style.setProperty('--queue-drag-offset', `${offset}px`);
+    });
+    const finishDrag = () => {
+        if (!dragging) return;
+        const offset = Math.max(0, currentY - startY);
+        sheet.classList.remove('queue-sheet-dragging');
+        sheet.style.removeProperty('--queue-drag-offset');
+        dragging = false;
+        if (offset > 90) closeSheet();
+    };
+    sheet.addEventListener('pointerup', finishDrag);
+    sheet.addEventListener('pointercancel', finishDrag);
+    document.addEventListener('mobile-queue-close', closeSheet);
+}
+
+function setupSessionStore() {
+    const volumeBar = document.getElementById('volume-bar');
+    let restoring = true, lastSave = 0;
+    const save = () => {
+        if (restoring || !state.currentTrack) return;
+        try {
+            localStorage.setItem(SESSION_KEY, JSON.stringify({
+                queue: state.queue, original: state.originalQueue, index: state.currentIndex,
+                time: audio.currentTime || 0, volume: audio.volume,
+                shuffle: state.isShuffle, repeat: state.repeatMode
+            }));
+        } catch { /* a böngésző nem engedi a mentést */ }
+    };
+    audio.addEventListener('timeupdate', () => { const now = Date.now(); if (now - lastSave > 3000) { lastSave = now; save(); } });
+    audio.addEventListener('pause', save);
+    audio.addEventListener('volumechange', save);
+    document.addEventListener('trackchange', save);
+    window.addEventListener('pagehide', save);
+
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { /* nincs mentett állapot */ }
+    const track = saved && Array.isArray(saved.queue) ? saved.queue[saved.index] : null;
+    if (!track || typeof track.title !== 'string') { restoring = false; return; }
+
+    state.queue = saved.queue;
+    state.originalQueue = Array.isArray(saved.original) ? saved.original : [...saved.queue];
+    state.currentIndex = saved.index;
+    state.currentTrack = track;
+    state.repeatMode = ['off', 'all', 'one'].includes(saved.repeat) ? saved.repeat : 'off';
+    state.isShuffle = !!saved.shuffle;
+    document.getElementById('btn-shuffle').classList.toggle('active', state.isShuffle);
+    document.getElementById('btn-repeat').classList.toggle('active', state.repeatMode !== 'off');
+    if (typeof saved.volume === 'number') setTimeout(() => {
+        volumeBar.value = saved.volume; volumeBar.dispatchEvent(new Event('input'));
+    }, 0);
+    const src = track.url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    audio.crossOrigin = isSameOrigin(src) ? 'anonymous' : null;
+    audio.src = src;
+    audio.addEventListener('loadedmetadata', () => {
+        if (saved.time > 0 && saved.time < audio.duration) audio.currentTime = saved.time;
+        restoring = false;
+    }, { once: true });
+    audio.addEventListener('error', () => { restoring = false; }, { once: true });
+    updatePlayerUI(track);
+    setPlayIcon(false);
+    state.isPlaying = false;
+    renderQueue();
+    updateLikeButtonUI();
+}
+
+function setupSleepTimer() {
+    const btn = document.getElementById('btn-sleep'), label = document.getElementById('sleep-label');
+    const volumeBar = document.getElementById('volume-bar');
+    if (!btn) return;
+    const steps = [0, 15, 30, 60];
+    let step = 0, tick = null, endAt = 0;
+    const stop = () => { clearInterval(tick); tick = null; label.textContent = ''; btn.classList.remove('active'); };
+    btn.addEventListener('click', () => {
+        stop();
+        step = (step + 1) % steps.length;
+        if (!steps[step]) { showToast('Alvás időzítő kikapcsolva'); return; }
+        endAt = Date.now() + steps[step] * 60000;
+        btn.classList.add('active');
+        showToast(`Leállítás ${steps[step]} perc múlva`);
+        tick = setInterval(() => {
+            const left = endAt - Date.now();
+            label.textContent = `${Math.max(1, Math.ceil(left / 60000))}p`;
+            const base = parseFloat(volumeBar.value);
+            if (left <= 0) { audio.pause(); audio.volume = base; stop(); step = 0; showToast('Jó éjszakát!'); }
+            else if (left <= 10000) audio.volume = base * left / 10000;
+        }, 1000);
+    });
+}
+
+function setupVisualizer() {
+    const canvas = document.getElementById('visualizer');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d'), root = document.documentElement;
+    const fake = new Array(48).fill(0);
+    let graph = null, data = null, connectedUrl = '';
+
+    function applyGraphRouting() {
+        if (!graph?.source) return;
+        try {
+            graph.source.disconnect();
+            graph.compressor.disconnect();
+            graph.analyser.disconnect();
+        } catch { /* lehet, hogy még nincs minden node kapcsolva */ }
+        if (state.normalizeAudio) {
+            graph.source.connect(graph.compressor);
+            graph.compressor.connect(graph.analyser);
+        } else {
+            graph.source.connect(graph.analyser);
+        }
+        graph.analyser.connect(graph.ac.destination);
+    }
+
+    function connect() {
+        const url = audio.currentSrc || audio.src || '';
+        if (!url || !isSameOrigin(url) || graph?.source) return;
+        try {
+            const ac = new (window.AudioContext || window.webkitAudioContext)();
+            const source = ac.createMediaElementSource(audio);
+            const compressor = ac.createDynamicsCompressor();
+            compressor.threshold.value = -24;
+            compressor.knee.value = 30;
+            compressor.ratio.value = 8;
+            compressor.attack.value = 0.006;
+            compressor.release.value = 0.22;
+            const analyser = ac.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.78;
+            graph = { ac, source, compressor, analyser };
+            applyGraphRouting();
+            connectedUrl = url;
+            data = new Uint8Array(analyser.frequencyBinCount);
+            audio.addEventListener('play', () => ac.resume());
+            ac.resume();
+        } catch {
+            graph = null;
+        }
+    }
+
+    document.addEventListener('audio-settings-change', applyGraphRouting);
+
+    document.addEventListener('trackchange', () => {
+        if (!graph?.source) connect();
+    });
+
+    (function frame() {
+        requestAnimationFrame(frame);
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        if (root.dataset.visualizer !== 'bars' || root.dataset.musicPlaying !== 'true' || !designAnimationsEnabled()) return;
+        if (!graph?.source) connect();
+        if (graph?.analyser) graph.analyser.getByteFrequencyData(data);
+        const styles = getComputedStyle(root);
+        const primary = styles.getPropertyValue('--accent-primary').trim() || '#38bdf8';
+        const secondary = styles.getPropertyValue('--accent-secondary').trim() || '#06b6d4';
+        const gradient = ctx.createLinearGradient(0, 0, w, 0);
+        gradient.addColorStop(0, primary);
+        gradient.addColorStop(0.55, secondary);
+        gradient.addColorStop(1, primary);
+        ctx.fillStyle = gradient;
+        ctx.shadowColor = primary;
+        ctx.shadowBlur = 12;
+        const n = fake.length, bw = w / n;
+        for (let i = 0; i < n; i++) {
+            let v;
+            if (graph?.analyser) {
+                const lowBias = Math.pow(i / n, 0.75);
+                v = data[Math.floor(lowBias * data.length * 0.92)] / 255;
+            } else {
+                const pulse = 0.3 + Math.sin(performance.now() / 140 + i * 0.55) * 0.18;
+                fake[i] += (pulse - fake[i]) * 0.18;
+                v = fake[i];
+            }
+            const bh = Math.max(4, Math.pow(v, 0.78) * h);
+            const x = i * bw + 2;
+            const radius = Math.min(6, (bw - 4) / 2);
+            const barWidth = Math.max(2, bw - 4);
+            if (ctx.roundRect) {
+                ctx.beginPath();
+                ctx.roundRect(x, h - bh, barWidth, bh, radius);
+                ctx.fill();
+            } else {
+                ctx.fillRect(x, h - bh, barWidth, bh);
+            }
+        }
+        ctx.shadowBlur = 0;
+    })();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    setupPlaybackSync();
+    setupMediaSession();
+    setupAudioSettings();
+    setupShortcuts();
+    setupShortcutsModal();
+    setupMobileQueueSheet();
+    setupSleepTimer();
+    setupVisualizer();
+    renderRecentSearches();
+    setupSessionStore();
 });
