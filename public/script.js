@@ -153,7 +153,7 @@ async function playTrack(track, queue = [], options = {}) {
 
     setTrackSource(track);
     audio.volume = shouldFade ? 0 : requestedVolume;
-    audio.play()?.catch(err => { if (err.name !== 'AbortError') showToast('A lejátszás nem indult el'); });
+    audio.play()?.catch(err => { if (err.name !== 'AbortError') showToast(t('toast.playFailed')); });
     state.isPlaying = true;
 
     updatePlayerUI(track);
@@ -201,13 +201,13 @@ async function playAlbum(album) {
     const fullAlbum = await api.getAlbum(album.id);
 
     if (!fullAlbum || !fullAlbum.songs || fullAlbum.songs.length === 0) {
-        showToast("This album has no songs yet.");
+        showToast(t('toast.albumEmpty'));
         return;
     }
 
     navigateToPage("player-page");
     playTrack(fullAlbum.songs[0], fullAlbum.songs);
-    showToast(`Playing "${fullAlbum.title}"`);
+    showToast(t('toast.playingAlbum', { title: fullAlbum.title }));
 }
 
 function toggleShuffle() {
@@ -228,7 +228,7 @@ function toggleShuffle() {
             state.queue = [currentSong, ...restSongs];
             state.currentIndex = 0;
         }
-        showToast("Keverés bekapcsolva - Sorrend frissítve");
+        showToast(t('toast.shuffleOn'));
     } else {
         if (state.originalQueue.length > 0) {
             const currentSong = state.queue[state.currentIndex];
@@ -236,7 +236,7 @@ function toggleShuffle() {
             const origIdx = state.queue.findIndex(s => s.id === currentSong.id || (s.title === currentSong.title && s.artist === currentSong.artist));
             state.currentIndex = origIdx !== -1 ? origIdx : 0;
         }
-        showToast("Keverés kikapcsolva");
+        showToast(t('toast.shuffleOff'));
     }
     renderQueue();
 }
@@ -247,13 +247,13 @@ function toggleShuffle() {
 function updatePlayerUI(track) {
     document.dispatchEvent(new CustomEvent('trackchange', { detail: track }));
     document.querySelector('.now-playing-btn').hidden = false;
-    document.getElementById("mini-title").innerText = track.title;
-    document.getElementById("mini-artist").innerText = track.artist;
+    setPlain(document.getElementById("mini-title"), track.title);
+    setPlain(document.getElementById("mini-artist"), track.artist);
     document.getElementById("mini-cover").src = track.cover || "";
 
-    document.getElementById("player-title").innerText = track.title;
-    document.getElementById("player-artist").innerText = track.artist;
-    document.getElementById("player-album").innerText = track.album || "";
+    setPlain(document.getElementById("player-title"), track.title);
+    setPlain(document.getElementById("player-artist"), track.artist);
+    setPlain(document.getElementById("player-album"), track.album || "");
     document.getElementById("player-cover").src = track.cover || "";
 
     playIcon.innerHTML = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
@@ -267,7 +267,7 @@ function renderGrid(items, containerId, onClick) {
         <div class="card" data-index="${index}">
             <img class="card-cover" src="${item.cover || ''}" alt="">
             <div class="card-title">${item.title || item.name}</div>
-            <div class="card-subtitle">${item.artist || 'Album'}</div>
+            <div class="card-subtitle"${item.artist ? '' : ' data-i18n="common.album"'}>${item.artist || t('common.album')}</div>
         </div>
     `).join("");
 
@@ -314,7 +314,7 @@ function renderSongList(songs, containerId) {
         item.addEventListener("click", () => {
             navigateToPage("player-page");
             playTrack(songs[idx], songs);
-            showToast(`Lejátszás: ${songs[idx].title}`);
+            showToast(t('toast.playing', { title: songs[idx].title }));
         });
         item.addEventListener("contextmenu", (e) => showContextMenu(e, songs[idx]));
     });
@@ -326,7 +326,7 @@ function renderQueue() {
     if (!queueContainer) return;
 
     if (!state.queue || state.queue.length === 0) {
-        queueContainer.innerHTML = '<div style="color:#aaa; text-align:center; padding:20px;">A lejátszási sor üres</div>';
+        queueContainer.innerHTML = `<div data-i18n="queue.empty" style="color:#aaa; text-align:center; padding:20px;">${t('queue.empty')}</div>`;
         return;
     }
 
@@ -478,7 +478,7 @@ function moveQueueItem(fromIndex, toIndex) {
         });
     }
     rows[toIndex]?.classList.add('queue-moved');
-    showToast("Sorrend frissítve");
+    showToast(t('toast.orderUpdated'));
 }
 
 async function loadHomePageData() {
@@ -515,11 +515,11 @@ function setupContextMenu() {
                 if (isLiked) {
                     // Eltávolítás a kedvencek közül
                     await api.removeSongFromPlaylist(favList.id, selectedContextSong.id);
-                    showToast(`"${selectedContextSong.title}" eltávolítva a kedvencek közül!`);
+                    showToast(t('toast.favRemoved', { title: selectedContextSong.title }));
                 } else {
                     // Hozzáadás a kedvencekhez
                     await api.addSongToPlaylist(favList.id, selectedContextSong.id);
-                    showToast(`"${selectedContextSong.title}" hozzáadva a kedvencekhez!`);
+                    showToast(t('toast.favAdded', { title: selectedContextSong.title }));
                 }
 
                 await loadPlaylistsData();
@@ -566,7 +566,7 @@ function setupContextMenu() {
             }
 
             renderQueue();
-            showToast(`"${selectedContextSong.title}" beállítva következőnek!`);
+            showToast(t('toast.playNextSet', { title: selectedContextSong.title }));
         }
         hideContextMenu();
     });
@@ -581,7 +581,7 @@ function setupContextMenu() {
                     state.currentIndex--;
                 }
                 renderQueue();
-                showToast(`"${selectedContextSong.title}" eltávolítva a sorból.`);
+                showToast(t('toast.removedFromQueue', { title: selectedContextSong.title }));
             }
         }
         hideContextMenu();
@@ -602,7 +602,7 @@ function showContextMenu(e, song) {
         const labelSpan = favBtn.querySelector("span");
 
         if (labelSpan) {
-            labelSpan.innerText = isLiked ? "Eltávolítás a kedvencek közül" : "Kedvencekhez adás";
+            setText(labelSpan, isLiked ? 'action.removeFavorite' : 'action.addFavorite');
         }
     }
 
@@ -652,7 +652,7 @@ window.loadPlaylistsData = async function() {
 
     container.innerHTML = userPlaylists.map(p => `
         <div class="playlist-card" data-id="${p.id}">
-            <button class="playlist-delete-btn" data-id="${p.id}" title="Lista törlése">
+            <button class="playlist-delete-btn" data-id="${p.id}" title="${t('playlist.delete')}" data-i18n-attr="title:playlist.delete">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -662,7 +662,7 @@ window.loadPlaylistsData = async function() {
                 ${p.cover ? `<img class="playlist-cover-img" src="${p.cover}" alt="${p.name}">` : ''}
             </div>
             <div class="playlist-title">${p.name}</div>
-            <div class="playlist-count">${p.songs ? p.songs.length : (p.songCount || 0)} song</div>
+            <div class="playlist-count" data-i18n="playlist.songs" data-i18n-args='{"count":${p.songs ? p.songs.length : (p.songCount || 0)}}'>${t('playlist.songs', { count: p.songs ? p.songs.length : (p.songCount || 0) })}</div>
         </div>
     `).join("");
 
@@ -673,9 +673,9 @@ window.loadPlaylistsData = async function() {
             if (playlist && playlist.songs && playlist.songs.length > 0) {
                 navigateToPage("player-page");
                 playTrack(playlist.songs[0], playlist.songs);
-                showToast(`"${playlist.name}" lejátszása`);
+                showToast(t('toast.playlistPlaying', { name: playlist.name }));
             } else {
-                showToast("Ez a lejátszási lista üres!");
+                showToast(t('toast.playlistEmpty'));
             }
         });
     });
@@ -693,11 +693,11 @@ async function createNewPlaylist(name, cover = "") {
     if (!name || !name.trim()) return;
     const result = await api.createPlaylist(name.trim());
     if (!result) {
-        showToast('Nem sikerült létrehozni a playlistet');
+        showToast(t('toast.playlistCreateFailed'));
         return null;
     }
     await loadPlaylistsData();
-    showToast(`"${result.name}" lejátszási lista létrehozva`);
+    showToast(t('toast.playlistCreated', { name: result.name }));
     return result;
 }
 
@@ -707,11 +707,11 @@ async function deletePlaylist(id) {
 
     const result = await api.deletePlaylist(playlist.id);
     if (!result){
-        showToast("Couldn't delete playlist");
+        showToast(t('toast.playlistDeleteFailed'));
         return;
     }
     await loadPlaylistsData();
-    showToast(`"${playlist.name}" törölve`);
+    showToast(t('toast.playlistDeleted', { name: playlist.name }));
 }
 
 function updateLikeButtonUI() {
@@ -736,10 +736,10 @@ async function toggleLikeCurrentTrack() {
 
     if (isLiked) {
         await api.removeSongFromPlaylist(favList.id, state.currentTrack.id);
-        showToast('Song removed from liked songs');
+        showToast(t('toast.likedRemoved'));
     } else {
         await api.addSongToPlaylist(favList.id, state.currentTrack.id);
-        showToast('Song added to liked songs');
+        showToast(t('toast.likedAdded'));
     }
 
     await loadPlaylistsData();
@@ -748,7 +748,7 @@ async function toggleLikeCurrentTrack() {
 
 function openAddToPlaylistModal() {
     if (!state.currentTrack) {
-        showToast("Nincs kiválasztva zene!");
+        showToast(t('toast.noTrack'));
         return;
     }
     const modal = document.getElementById("add-to-playlist-modal");
@@ -767,10 +767,10 @@ function openAddToPlaylistModal() {
             const result = await api.addSongToPlaylist(id, state.currentTrack.id);
             
             if (!result) {
-                showToast('This song is already in the playlist');
+                showToast(t('toast.alreadyInPlaylist'));
             } else {
                 const targetPlaylist = userPlaylists.find(s => s.id === id);
-                showToast(`Song added to ${targetPlaylist.name}`);
+                showToast(t('toast.addedToPlaylist', { name: targetPlaylist.name }));
                 await loadPlaylistsData();
             }
             modal.classList.remove("active");
@@ -827,8 +827,8 @@ function renderLyrics() {
     if (!container) return;
     state.activeLyricIndex = -1;
     if (!state.lyrics.length) {
-        container.innerHTML = '<div class="lyrics-empty">Ehhez a dalhoz még nincs LRC dalszöveg.</div>';
-        if (status) status.textContent = 'Nincs betöltött dalszöveg';
+        container.innerHTML = `<div class="lyrics-empty" data-i18n="lyrics.noneForSong">${t('lyrics.noneForSong')}</div>`;
+        if (status) setText(status, 'lyrics.none');
         return;
     }
     container.innerHTML = state.lyrics.map((line, index) => `
@@ -836,7 +836,7 @@ function renderLyrics() {
             ${line.text}
         </div>
     `).join('');
-    if (status) status.textContent = `${state.lyrics.length} sor szinkronizálva`;
+    if (status) setText(status, 'lyrics.synced', { count: state.lyrics.length });
     syncLyrics();
 }
 
@@ -894,7 +894,7 @@ function setupLyricsTools() {
             if (state.currentTrack) state.currentTrack.lrc = lrc;
             state.lyrics = parseLrc(lrc);
             renderLyrics();
-            showToast(state.lyrics.length ? 'Dalszöveg betöltve' : 'Nem találtam időbélyeges LRC sorokat');
+            showToast(t(state.lyrics.length ? 'lyrics.loaded' : 'lyrics.noTimestamps'));
         };
         reader.readAsText(file);
     });
@@ -921,16 +921,16 @@ function toggleAccountMenu(event) {
     const menu = document.getElementById('account-menu');
     if (menu) menu.classList.toggle('show');
     
-    const username = localStorage.getItem('username') || 'Vendég';
+    const username = localStorage.getItem('username');
     const displayEl = document.getElementById('user-display-name');
-    if (displayEl) displayEl.textContent = username;
+    if (displayEl) { if (username) setPlain(displayEl, username); else setText(displayEl, 'account.guest'); }
 }
 
 function navigateToAuth() { window.location.href = 'auth.html'; }
 function handleLogout() {
     localStorage.removeItem('username');
     localStorage.removeItem('token');
-    alert('Sikeresen kijelentkeztél!');
+    alert(t('account.loggedOut'));
     window.location.reload();
 }
 
@@ -983,18 +983,18 @@ function setupDesignSettings() {
     const colorContainer = document.getElementById('theme-colors');
     if (!form || !colorContainer) return;
     const colors = {
-        '--bg-main': 'Oldal háttere', '--bg-header': 'Fejléc',
-        '--bg-card': 'Kártyák', '--bg-card-hover': 'Kártyák kiemelése',
-        '--bg-element': 'Elemek háttere', '--bg-element-hover': 'Elemek kiemelése',
-        '--accent-primary': 'Fő kiemelőszín', '--accent-primary-hover': 'Gombok kiemelése',
-        '--accent-secondary': 'Másodlagos kiemelőszín', '--text-primary': 'Fő szöveg',
-        '--text-secondary': 'Másodlagos szöveg', '--text-muted': 'Halvány szöveg',
-        '--slider-track-bg': 'Csúszkák háttere', '--danger': 'Kedvencek és törlés',
-        '--danger-hover': 'Törlés kiemelése', '--text-on-accent': 'Szöveg a kiemelőszínen'
+        '--bg-main': 'color.bgMain', '--bg-header': 'color.bgHeader',
+        '--bg-card': 'color.bgCard', '--bg-card-hover': 'color.bgCardHover',
+        '--bg-element': 'color.bgElement', '--bg-element-hover': 'color.bgElementHover',
+        '--accent-primary': 'color.accent', '--accent-primary-hover': 'color.accentHover',
+        '--accent-secondary': 'color.accent2', '--text-primary': 'color.text',
+        '--text-secondary': 'color.text2', '--text-muted': 'color.muted',
+        '--slider-track-bg': 'color.slider', '--danger': 'color.danger',
+        '--danger-hover': 'color.dangerHover', '--text-on-accent': 'color.onAccent'
     };
     const root = document.documentElement;
     const styles = getComputedStyle(root);
-    const defaults = { corners: '20px', spacing: 'comfortable', animations: true, colorMode: 'manual', visualizer: 'glow' };
+    const defaults = { corners: '20px', spacing: 'comfortable', animations: true, stickyHeader: true, colorMode: 'manual', visualizer: 'glow' };
     for (const key of Object.keys(colors)) defaults[key] = styles.getPropertyValue(key).trim();
     let saved;
     try { saved = JSON.parse(localStorage.getItem('musik-design')); } catch { /* Az alapértékekkel is használható. */ }
@@ -1007,13 +1007,13 @@ function setupDesignSettings() {
         if (!target) continue;
         target.innerHTML = Object.entries(colors)
             .filter(([key]) => !advancedContainer || primaryColors.includes(key) !== advanced)
-            .map(([key, label]) => `<label>${label}<input type="color" name="${key}" aria-label="${label}"></label>`).join('');
+            .map(([key, label]) => `<label><span data-i18n="${label}">${t(label)}</span><input type="color" name="${key}" aria-label="${t(label)}" data-i18n-attr="aria-label:${label}"></label>`).join('');
     }
     let selectedTrack = null;
     let colorRequest = 0;
     const musicStatus = document.getElementById('music-design-status');
     function setMusicStatus(message) {
-        if (musicStatus) musicStatus.textContent = message;
+        if (musicStatus) setText(musicStatus, message);
     }
     function applyMusicPalette(hue) {
         const palette = {
@@ -1030,14 +1030,12 @@ function setupDesignSettings() {
         const request = ++colorRequest;
         for (const key of Object.keys(colors)) root.style.setProperty(key, design[key]);
         if (!selectedTrack || design.colorMode === 'manual') {
-            setMusicStatus(selectedTrack ? 'A saját színpalettád aktív.' : 'Válassz egy dalt a zenei megjelenéshez.');
+            setMusicStatus(selectedTrack ? 'music.status.custom' : 'music.status.pick');
             return;
         }
         const fallback = trackHue(selectedTrack);
         applyMusicPalette(fallback);
-        setMusicStatus(design.colorMode === 'cover'
-            ? 'Borító nélkül vagy nem olvasható borítónál a dalonkénti paletta érvényes.'
-            : 'A dal címéhez és előadójához tartozó paletta aktív.');
+        setMusicStatus(design.colorMode === 'cover' ? 'music.status.coverFallback' : 'music.status.song');
         if (design.colorMode !== 'cover' || !selectedTrack.cover) return;
         const cover = new Image();
         cover.crossOrigin = 'anonymous';
@@ -1049,7 +1047,7 @@ function setupDesignSettings() {
                 const context = canvas.getContext('2d', { willReadFrequently: true });
                 context.drawImage(cover, 0, 0, 24, 24);
                 applyMusicPalette(coverHue(context.getImageData(0, 0, 24, 24).data, fallback));
-                setMusicStatus('A borítóhoz illő színpaletta aktív.');
+                setMusicStatus('music.status.cover');
             } catch { /* Külső képnél a böngésző tilthatja a színolvasást; a dalpaletta marad. */ }
         };
         cover.onerror = () => {}; // A dalpaletta már aktív, a lejátszást nem érinti a képhiba.
@@ -1067,6 +1065,7 @@ function setupDesignSettings() {
         root.style.setProperty('--surface-radius', design.corners);
         root.dataset.spacing = design.spacing;
         root.dataset.animations = design.animations ? 'on' : 'off';
+        root.dataset.stickyHeader = design.stickyHeader ? 'on' : 'off';
         root.dataset.visualizer = design.visualizer;
         for (const [key, value] of Object.entries(design)) {
             const input = form.elements.namedItem(key);
@@ -1084,16 +1083,16 @@ function setupDesignSettings() {
         applyDesign();
         try {
             localStorage.setItem('musik-design', JSON.stringify(design));
-            if (status) status.textContent = 'Beállítások mentve.';
-        } catch { if (status) status.textContent = 'A megjelenés frissült, de a böngésző nem engedi a mentést.'; }
+            if (status) setText(status, 'settings.saved');
+        } catch { if (status) setText(status, 'settings.saveBlocked'); }
     });
     document.getElementById('reset-design')?.addEventListener('click', () => {
         design = { ...defaults };
         applyDesign();
         try {
             localStorage.removeItem('musik-design');
-            if (status) status.textContent = 'Alapértelmezések visszaállítva.';
-        } catch { if (status) status.textContent = 'Az alapértékek visszaálltak, de a mentés nem törölhető.'; }
+            if (status) setText(status, 'settings.resetDone');
+        } catch { if (status) setText(status, 'settings.resetBlocked'); }
     });
     applyDesign();
 }
@@ -1153,15 +1152,15 @@ document.addEventListener("DOMContentLoaded", () => {
             if (state.repeatMode === 'off') {
                 state.repeatMode = 'all';
                 repeatBtn.classList.add("active");
-                showToast("Összes ismétlése");
+                showToast(t('toast.repeatAll'));
             } else if (state.repeatMode === 'all') {
                 state.repeatMode = 'one';
                 repeatBtn.classList.add("active");
-                showToast("Egy szám ismétlése");
+                showToast(t('toast.repeatOne'));
             } else {
                 state.repeatMode = 'off';
                 repeatBtn.classList.remove("active");
-                showToast("Ismétlés kikapcsolva");
+                showToast(t('toast.repeatOff'));
             }
         });
     }
@@ -1270,7 +1269,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const lyricsFile = document.getElementById("song-lyrics-file-input").files[0];
 
         if (!songFile) {
-            showToast('Choose an mp3 file!');
+            showToast(t('toast.chooseMp3'));
             return;        
         }
 
@@ -1283,11 +1282,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const result = await api.uploadSong(formData);
         if (!result) {
-            showToast('Upload failed!');
+            showToast(t('toast.uploadFailed'));
             return;
         }
 
-        showToast(`"${result.title || title}" uploaded successfully`);
+        showToast(t('toast.uploaded', { title: result.title || title }));
         hideSongModal();
         loadHomePageData();
     });
@@ -1459,7 +1458,7 @@ function setupAudioSettings() {
     const mobileSwipe = document.getElementById('mobile-queue-swipe-setting');
     const render = () => {
         if (crossfade) crossfade.value = String(state.crossfadeMs / 1000);
-        if (crossfadeValue) crossfadeValue.textContent = `${(state.crossfadeMs / 1000).toFixed(1).replace('.0', '')} mp`;
+        if (crossfadeValue) setText(crossfadeValue, 'settings.seconds', { value: (state.crossfadeMs / 1000).toFixed(1).replace('.0', '') });
         if (normalization) normalization.checked = state.normalizeAudio;
         if (mobileSwipe) mobileSwipe.checked = state.mobileQueueSwipe;
     };
@@ -1472,7 +1471,7 @@ function setupAudioSettings() {
         state.normalizeAudio = event.target.checked;
         saveAudioSettings();
         document.dispatchEvent(new CustomEvent('audio-settings-change'));
-        showToast(state.normalizeAudio ? 'Hangerő-normalizálás bekapcsolva' : 'Hangerő-normalizálás kikapcsolva');
+        showToast(t(state.normalizeAudio ? 'toast.normOn' : 'toast.normOff'));
     });
     mobileSwipe?.addEventListener('change', event => {
         state.mobileQueueSwipe = event.target.checked;
@@ -1488,21 +1487,22 @@ function setupMobileQueueSheet() {
     const backdrop = document.createElement('button');
     backdrop.type = 'button';
     backdrop.className = 'mobile-queue-backdrop';
-    backdrop.setAttribute('aria-label', 'Queue bezárása');
+    backdrop.setAttribute('aria-label', t('player.closeQueue'));
+    backdrop.dataset.i18nAttr = 'aria-label:player.closeQueue';
     sheet.parentElement?.insertBefore(backdrop, sheet);
     const isMobile = () => window.matchMedia('(max-width: 900px)').matches;
     const closeSheet = () => {
         sheet?.classList.remove('queue-sheet-open');
         document.body.classList.remove('mobile-queue-open');
         toggle?.setAttribute('aria-expanded', 'false');
-        toggle?.querySelector('span')?.replaceChildren(document.createTextNode('Song queue'));
+        setText(toggle?.querySelector('span'), 'player.queue');
     };
     const openSheet = () => {
         if (!sheet || !isMobile()) return;
         sheet.classList.add('queue-sheet-open');
         document.body.classList.add('mobile-queue-open');
         toggle?.setAttribute('aria-expanded', 'true');
-        toggle?.querySelector('span')?.replaceChildren(document.createTextNode('Lejátszó'));
+        setText(toggle?.querySelector('span'), 'player.player');
         requestAnimationFrame(() => {
             const queuePanel = document.getElementById('queue-panel');
             const queueList = document.getElementById('queue-container');
@@ -1620,15 +1620,15 @@ function setupSleepTimer() {
     btn.addEventListener('click', () => {
         stop();
         step = (step + 1) % steps.length;
-        if (!steps[step]) { showToast('Alvás időzítő kikapcsolva'); return; }
+        if (!steps[step]) { showToast(t('toast.sleepOff')); return; }
         endAt = Date.now() + steps[step] * 60000;
         btn.classList.add('active');
-        showToast(`Leállítás ${steps[step]} perc múlva`);
+        showToast(t('toast.sleepSet', { min: steps[step] }));
         tick = setInterval(() => {
             const left = endAt - Date.now();
-            label.textContent = `${Math.max(1, Math.ceil(left / 60000))}p`;
+            label.textContent = `${Math.max(1, Math.ceil(left / 60000))}${currentLanguage === 'hu' ? 'p' : 'm'}`;
             const base = parseFloat(volumeBar.value);
-            if (left <= 0) { audio.pause(); audio.volume = base; stop(); step = 0; showToast('Jó éjszakát!'); }
+            if (left <= 0) { audio.pause(); audio.volume = base; stop(); step = 0; showToast(t('toast.goodNight')); }
             else if (left <= 10000) audio.volume = base * left / 10000;
         }, 1000);
     });
