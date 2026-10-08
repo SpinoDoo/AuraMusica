@@ -53,13 +53,6 @@
                     <path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--bg-header)"/><circle cx="15" cy="17" r="3" fill="var(--bg-header)"/>
                 </svg>
             </button>
-            <button class="nav-item" id="btn-shortcuts-help" aria-label="Billentyűparancs súgó" title="Billentyűparancsok">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <path d="M9.7 9a2.5 2.5 0 1 1 4.1 1.9c-.9.6-1.8 1.3-1.8 2.6"></path>
-                    <path d="M12 17h.01"></path>
-                </svg>
-            </button>
      
                 <div class="account-dropdown-container">
             <button class="nav-item" id="btn-account" onclick="toggleAccountMenu(event)">
@@ -136,31 +129,135 @@
         <div id="settings-page" class="page">
             <h2 class="section-title">Beállítások</h2>
             <p class="settings-description">Alakítsd a saját ízlésedre. A változások azonnal láthatók, és ebben a böngészőben megmaradnak.</p>
-            <form id="design-settings" class="settings-panel">
-                <fieldset>
-                    <legend>Színek</legend>
-                    <div id="theme-colors" class="settings-grid"></div>
-                    <details class="settings-advanced"><summary>Haladó színek</summary><div id="theme-colors-advanced" class="settings-grid"></div></details>
-                </fieldset>
-                <fieldset class="settings-grid">
-                    <legend>Megjelenés</legend>
-                    <label>Lekerekítés <select name="corners"><option value="0px">Szögletes</option><option value="12px">Enyhén kerek</option><option value="20px">Kerek</option></select></label>
-                    <label>Térközök <select name="spacing"><option value="compact">Kompakt</option><option value="comfortable">Kényelmes</option></select></label>
-                    <label>Színmód <select name="colorMode"><option value="manual">Saját színek</option><option value="cover">Borítóból</option><option value="song">Dalonként</option></select></label>
-                    <label>Vizualizáló <select name="visualizer"><option value="off">Ki</option><option value="glow">Ragyogás</option><option value="bars">Sávok</option></select></label>
-                    <label class="settings-toggle"><input type="checkbox" name="animations"> Animációk engedélyezése</label>
-                </fieldset>
-                <fieldset class="settings-grid">
-                    <legend>Lejátszás</legend>
-                    <label>Crossfade <input type="range" id="crossfade-setting" min="0" max="8" step="0.5"></label>
-                    <label class="settings-value">Áttűnés hossza <span id="crossfade-value">2.5 mp</span></label>
-                    <label class="settings-toggle"><input type="checkbox" id="normalization-setting"> Hangerő-normalizálás</label>
-                    <label class="settings-toggle"><input type="checkbox" id="mobile-queue-swipe-setting"> Mobil queue lehúzással zárható</label>
-                </fieldset>
-                <button type="button" id="reset-design" class="modal-btn cancel">Alapértelmezések visszaállítása</button>
-                <p id="music-design-status" role="status" aria-live="polite"></p>
-                <p id="settings-status" role="status" aria-live="polite"></p>
-            </form>
+
+            <div class="settings-layout">
+                <nav class="settings-tabs" role="tablist" aria-label="Beállítások kategóriái">
+                    <button type="button" class="settings-tab active" role="tab" id="stab-appearance" data-settings-tab="appearance" aria-selected="true" aria-controls="ssec-appearance">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3a9 9 0 100 18c1.1 0 1.8-.9 1.5-1.9-.3-1 .3-2.1 1.4-2.1H17a4 4 0 004-4c0-5-4-10-9-10z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>
+                        <span>Megjelenés</span>
+                    </button>
+                    <button type="button" class="settings-tab" role="tab" id="stab-colors" data-settings-tab="colors" aria-selected="false" aria-controls="ssec-colors">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2.7s7 6.3 7 11.3a7 7 0 01-14 0c0-5 7-11.3 7-11.3z"/></svg>
+                        <span>Színek</span>
+                    </button>
+                    <button type="button" class="settings-tab" role="tab" id="stab-playback" data-settings-tab="playback" aria-selected="false" aria-controls="ssec-playback">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                        <span>Lejátszás</span>
+                    </button>
+                    <button type="button" class="settings-tab" role="tab" id="stab-shortcuts" data-settings-tab="shortcuts" aria-selected="false" aria-controls="ssec-shortcuts">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+                        <span>Billentyűparancsok</span>
+                    </button>
+                </nav>
+
+                <div class="settings-content">
+                    <form id="design-settings" class="settings-form">
+                        <section class="settings-section" id="ssec-appearance" data-settings-section="appearance" role="tabpanel" aria-labelledby="stab-appearance">
+                            <header class="settings-section-head">
+                                <h3>Megjelenés</h3>
+                                <p>Az alkalmazás formája, térközei és vizuális effektjei.</p>
+                            </header>
+                            <div class="settings-rows">
+                                <label class="setting-row">
+                                    <span class="setting-text"><strong>Lekerekítés</strong><small>A kártyák és panelek sarkainak formája.</small></span>
+                                    <select name="corners"><option value="0px">Szögletes</option><option value="12px">Enyhén kerek</option><option value="20px">Kerek</option></select>
+                                </label>
+                                <label class="setting-row">
+                                    <span class="setting-text"><strong>Térközök</strong><small>Kompakt módban több elem fér a képernyőre.</small></span>
+                                    <select name="spacing"><option value="compact">Kompakt</option><option value="comfortable">Kényelmes</option></select>
+                                </label>
+                                <label class="setting-row">
+                                    <span class="setting-text"><strong>Színmód</strong><small>Saját palettát használj, vagy kövesse a lejátszott zenét.</small></span>
+                                    <select name="colorMode"><option value="manual">Saját színek</option><option value="cover">Borítóból</option><option value="song">Dalonként</option></select>
+                                </label>
+                                <label class="setting-row">
+                                    <span class="setting-text"><strong>Vizualizáló</strong><small>Mozgó effekt a lejátszó oldalon.</small></span>
+                                    <select name="visualizer"><option value="off">Ki</option><option value="glow">Ragyogás</option><option value="bars">Sávok</option></select>
+                                </label>
+                                <label class="setting-row">
+                                    <span class="setting-text"><strong>Animációk</strong><small>Átmenetek és mozgó elemek engedélyezése.</small></span>
+                                    <span class="switch"><input type="checkbox" name="animations"><span class="switch-slider"></span></span>
+                                </label>
+                            </div>
+                            <p id="music-design-status" class="settings-note" role="status" aria-live="polite"></p>
+                        </section>
+
+                        <section class="settings-section" id="ssec-colors" data-settings-section="colors" role="tabpanel" aria-labelledby="stab-colors" hidden>
+                            <header class="settings-section-head">
+                                <h3>Színek</h3>
+                                <p>Kattints egy színmintára a módosításhoz. Ha a színmód nem „Saját színek”, a zenéhez igazodó paletta felülírhatja ezeket.</p>
+                            </header>
+                            <div id="theme-colors" class="settings-grid color-grid"></div>
+                            <details class="settings-advanced"><summary>Haladó színek</summary><div id="theme-colors-advanced" class="settings-grid color-grid"></div></details>
+                        </section>
+
+                        <section class="settings-section" id="ssec-playback" data-settings-section="playback" role="tabpanel" aria-labelledby="stab-playback" hidden>
+                            <header class="settings-section-head">
+                                <h3>Lejátszás</h3>
+                                <p>Hangbeállítások és a lejátszó viselkedése.</p>
+                            </header>
+                            <div class="settings-rows">
+                                <div class="setting-row">
+                                    <span class="setting-text"><strong>Crossfade</strong><small>A dalok közötti áttűnés hossza. 0 = kikapcsolva.</small></span>
+                                    <span class="range-control">
+                                        <input type="range" id="crossfade-setting" min="0" max="8" step="0.5" aria-label="Crossfade hossza">
+                                        <output id="crossfade-value" class="range-value">2.5 mp</output>
+                                    </span>
+                                </div>
+                                <label class="setting-row">
+                                    <span class="setting-text"><strong>Hangerő-normalizálás</strong><small>Kiegyenlíti a dalok közötti hangerőkülönbséget.</small></span>
+                                    <span class="switch"><input type="checkbox" id="normalization-setting"><span class="switch-slider"></span></span>
+                                </label>
+                                <label class="setting-row">
+                                    <span class="setting-text"><strong>Mobil queue lehúzással zárható</strong><small>Mobilon a sor lefelé húzással bezárható.</small></span>
+                                    <span class="switch"><input type="checkbox" id="mobile-queue-swipe-setting"><span class="switch-slider"></span></span>
+                                </label>
+                            </div>
+                        </section>
+                    </form>
+
+                    <section class="settings-section" id="ssec-shortcuts" data-settings-section="shortcuts" role="tabpanel" aria-labelledby="stab-shortcuts" hidden>
+                        <header class="settings-section-head">
+                            <h3>Billentyűparancsok</h3>
+                            <p>Gyorsbillentyűk a lejátszás vezérléséhez. Szövegmezőben gépelés közben nem aktívak. A <kbd>?</kbd> billentyűvel bárhonnan ide léphetsz.</p>
+                        </header>
+                        <div class="shortcut-groups">
+                            <div class="shortcut-group">
+                                <h4>Lejátszás</h4>
+                                <div class="shortcut-list">
+                                    <div><kbd>Space</kbd><span>Lejátszás / szünet</span></div>
+                                    <div><kbd>N</kbd><span>Következő szám</span></div>
+                                    <div><kbd>P</kbd><span>Előző szám</span></div>
+                                    <div><kbd>←</kbd><span>Visszatekerés 5 mp</span></div>
+                                    <div><kbd>→</kbd><span>Előretekerés 5 mp</span></div>
+                                </div>
+                            </div>
+                            <div class="shortcut-group">
+                                <h4>Hangerő</h4>
+                                <div class="shortcut-list">
+                                    <div><kbd>↑</kbd><span>Hangerő fel</span></div>
+                                    <div><kbd>↓</kbd><span>Hangerő le</span></div>
+                                    <div><kbd>M</kbd><span>Némítás</span></div>
+                                </div>
+                            </div>
+                            <div class="shortcut-group">
+                                <h4>Egyéb</h4>
+                                <div class="shortcut-list">
+                                    <div><kbd>S</kbd><span>Keverés</span></div>
+                                    <div><kbd>R</kbd><span>Ismétlés</span></div>
+                                    <div><kbd>L</kbd><span>Kedvencek</span></div>
+                                    <div><kbd>?</kbd><span>Billentyűparancsok megnyitása</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="settings-footer" id="settings-footer">
+                        <button type="button" id="reset-design" class="modal-btn cancel">Alapértelmezések visszaállítása</button>
+                        <p id="settings-status" role="status" aria-live="polite"></p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div id="player-page" class="page">
@@ -351,27 +448,6 @@
     </div>
 
     <div id="toast" class="toast"></div>
-
-    <div id="shortcuts-modal" class="modal">
-        <div class="modal-content shortcuts-modal-content">
-            <span class="close-modal-btn" id="close-shortcuts-modal">&times;</span>
-            <h3>Billentyűparancsok</h3>
-            <div class="shortcut-list">
-                <div><kbd>Space</kbd><span>Lejátszás / szünet</span></div>
-                <div><kbd>N</kbd><span>Következő szám</span></div>
-                <div><kbd>P</kbd><span>Előző szám</span></div>
-                <div><kbd>←</kbd><span>Visszatekerés 5 mp</span></div>
-                <div><kbd>→</kbd><span>Előretekerés 5 mp</span></div>
-                <div><kbd>↑</kbd><span>Hangerő fel</span></div>
-                <div><kbd>↓</kbd><span>Hangerő le</span></div>
-                <div><kbd>M</kbd><span>Némítás</span></div>
-                <div><kbd>S</kbd><span>Keverés</span></div>
-                <div><kbd>R</kbd><span>Ismétlés</span></div>
-                <div><kbd>L</kbd><span>Kedvencek</span></div>
-                <div><kbd>?</kbd><span>Súgó megnyitása</span></div>
-            </div>
-        </div>
-    </div>
 
     <script src="script.js"></script>
 </body>

@@ -1396,16 +1396,41 @@ function setupShortcuts() {
 }
 
 function openShortcutsModal() {
-    document.getElementById('shortcuts-modal')?.classList.add('active');
+    navigateToPage('settings-page');
+    selectSettingsTab('shortcuts');
 }
 
-function setupShortcutsModal() {
-    const modal = document.getElementById('shortcuts-modal');
-    document.getElementById('btn-shortcuts-help')?.addEventListener('click', openShortcutsModal);
-    document.getElementById('close-shortcuts-modal')?.addEventListener('click', () => modal?.classList.remove('active'));
-    modal?.addEventListener('click', event => {
-        if (event.target === modal) modal.classList.remove('active');
+function selectSettingsTab(name) {
+    const tabs = document.querySelectorAll('.settings-tab');
+    const sections = document.querySelectorAll('[data-settings-section]');
+    if (![...sections].some(section => section.dataset.settingsSection === name)) return;
+    tabs.forEach(tab => {
+        const active = tab.dataset.settingsTab === name;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', String(active));
+        tab.tabIndex = active ? 0 : -1;
     });
+    sections.forEach(section => { section.hidden = section.dataset.settingsSection !== name; });
+    // A visszaállítás gomb csak a testreszabható beállításoknál értelmes.
+    const footer = document.getElementById('settings-footer');
+    if (footer) footer.hidden = name === 'shortcuts';
+}
+
+function setupSettingsTabs() {
+    const tabs = [...document.querySelectorAll('.settings-tab')];
+    tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => selectSettingsTab(tab.dataset.settingsTab));
+        tab.addEventListener('keydown', event => {
+            const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+            if (!step) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const next = tabs[(index + step + tabs.length) % tabs.length];
+            next.focus();
+            selectSettingsTab(next.dataset.settingsTab);
+        });
+    });
+    selectSettingsTab('appearance');
 }
 
 function loadAudioSettings() {
@@ -1713,7 +1738,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMediaSession();
     setupAudioSettings();
     setupShortcuts();
-    setupShortcutsModal();
+    setupSettingsTabs();
     setupMobileQueueSheet();
     setupSleepTimer();
     setupVisualizer();
